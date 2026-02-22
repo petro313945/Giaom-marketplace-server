@@ -4,7 +4,8 @@ import {
   getUserOrders,
   getOrderById,
   getSellerOrders,
-  updateOrderStatus
+  updateOrderStatus,
+  getAllOrders
 } from '../controllers/order.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -22,5 +23,8 @@ router.get('/:id', getOrderById);
 // Seller routes
 router.get('/seller/my-orders', requireRole('seller', 'admin'), getSellerOrders);
 router.put('/:id/status', updateOrderStatus); // Seller can update their product orders, admin can update any
+
+// Admin routes
+router.get('/admin/all', requireRole('admin'), getAllOrders);
 
 export default router;

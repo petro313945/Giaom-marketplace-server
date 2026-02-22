@@ -267,3 +267,54 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     res.status(500).json({ error: error.message || 'Failed to update order status' });
   }
 };
+
+// Get all orders (admin only)
+export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    if (req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const orders = await Order.find()
+      .populate('userId', 'email fullName')
+      .populate('items.productId')
+      .sort({ createdAt: -1 });
+
+    // Calculate statistics
+    const totalRevenue = orders
+      .filter(o => o.status !== 'cancelled')
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+    
+    const totalOrders = orders.length;
+    const pendingOrders = orders.filter(o => o.status === 'pending').length;
+    const deliveredOrders = orders.filter(o => o.status === 'delivered').length;
+
+    res.json({
+      orders: orders.map(order => ({
+        id: order._id,
+        userId: order.userId,
+        items: order.items,
+        totalAmount: order.totalAmount,
+        shippingAddress: order.shippingAddress,
+        status: order.status,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      })),
+      statistics: {
+        totalOrders,
+        totalRevenue,
+        pendingOrders,
+        deliveredOrders
+      },
+      count: orders.length
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get orders' });
+  }
+};

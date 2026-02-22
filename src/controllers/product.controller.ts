@@ -350,6 +350,44 @@ export const getPendingProducts = async (req: AuthRequest, res: Response): Promi
   }
 };
 
+// Get all products (admin only - includes all statuses)
+export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    if (req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const products = await Product.find()
+      .populate('sellerId', 'email fullName')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      products: products.map(product => ({
+        id: product._id,
+        _id: product._id,
+        sellerId: product.sellerId,
+        title: product.title,
+        description: product.description,
+        price: product.price,
+        category: product.category,
+        imageUrl: product.imageUrl,
+        status: product.status,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+      })),
+      count: products.length
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get all products' });
+  }
+};
+
 // Approve product (admin only)
 export const approveProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
