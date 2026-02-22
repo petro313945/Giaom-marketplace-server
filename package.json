@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint src/**/*.ts",
-    "seed:categories": "ts-node scripts/seed-categories.ts"
+    "seed:categories": "ts-node scripts/seed-categories.ts",
+    "seed:products": "ts-node scripts/seed-products.ts"
   },
   "keywords": ["marketplace", "express", "mern"],
   "author": "",

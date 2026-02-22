@@ -25,7 +25,11 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
     }
 
     if (search) {
-      query.$text = { $search: search as string };
+      // Use regex search for better compatibility (works without text index)
+      query.$or = [
+        { title: { $regex: search as string, $options: 'i' } },
+        { description: { $regex: search as string, $options: 'i' } }
+      ];
     }
 
     if (minPrice || maxPrice) {

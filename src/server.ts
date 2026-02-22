@@ -2,6 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
 import { connectDatabase } from './config/database';
 import { errorHandler } from './middleware/error.middleware';
 
@@ -13,6 +14,7 @@ import productRoutes from './routes/product.routes';
 import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import categoryRoutes from './routes/category.routes';
+import uploadRoutes from './routes/upload.routes';
 
 // Load environment variables
 dotenv.config();
@@ -24,11 +26,19 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 // Middleware
 app.use(helmet()); // Security headers
 app.use(cors({
-  origin: CLIENT_URL,
+  origin: [
+    CLIENT_URL,
+    'http://localhost:3000',
+    'http://146.19.170.131:3000',
+    /^http:\/\/146\.19\.170\.131/ // Allow any port on this IP
+  ],
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Basic route
 app.get('/', (req: Request, res: Response) => {
@@ -55,6 +65,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
@@ -65,9 +76,10 @@ const startServer = async () => {
     // Connect to MongoDB
     await connectDatabase();
     
-    // Start server
-    app.listen(PORT, () => {
+    // Start server - listen on all interfaces (0.0.0.0) to allow network access
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server is running on http://localhost:${PORT}`);
+      console.log(`🚀 Server is also accessible on http://146.19.170.131:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {

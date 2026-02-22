@@ -225,18 +225,26 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    // Check permissions: seller can update orders for their products, admin can update any
+    // Check permissions
     const isAdmin = req.user.role === 'admin';
+    const isOwner = order.userId.toString() === req.user!._id.toString();
     let isSeller = false;
 
-    if (!isAdmin) {
+    if (!isAdmin && !isOwner) {
       // Check if user is seller and owns products in this order
       const products = await Product.find({ _id: { $in: order.items.map(item => item.productId) } });
       isSeller = products.some(product => product.sellerId.toString() === req.user!._id.toString());
     }
 
-    if (!isAdmin && !isSeller) {
-      res.status(403).json({ error: 'You can only update orders for your products' });
+    // Allow customers to cancel their own orders (only pending or processing)
+    if (status === 'cancelled' && isOwner && (order.status === 'pending' || order.status === 'processing')) {
+      // Customer can cancel their own pending/processing orders
+    } else if (!isAdmin && !isSeller && !isOwner) {
+      res.status(403).json({ error: 'You do not have permission to update this order' });
+      return;
+    } else if (isOwner && status !== 'cancelled') {
+      // Customers can only cancel orders, not update to other statuses
+      res.status(403).json({ error: 'You can only cancel your orders' });
       return;
     }
 
