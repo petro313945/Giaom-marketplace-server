@@ -19,14 +19,14 @@ const exampleProducts = [
     title: 'Vintage Leather Bag',
     description: 'Handcrafted vintage leather bag with classic design and durable construction.',
     price: 129.99,
-    category: 'clothing',
+    category: 'fashion',
     imageUrl: '/vintage-leather-bag.jpg',
   },
   {
     title: 'Handmade Ceramic Mug',
     description: 'Beautiful handmade ceramic mug perfect for your morning coffee or tea.',
     price: 24.99,
-    category: 'home',
+    category: 'home-garden',
     imageUrl: '/ceramic-mug.png',
   },
   {
@@ -40,7 +40,7 @@ const exampleProducts = [
     title: 'Organic Cotton T-Shirt',
     description: 'Comfortable organic cotton t-shirt, eco-friendly and soft on the skin.',
     price: 29.99,
-    category: 'clothing',
+    category: 'fashion',
     imageUrl: '/cotton-tshirt.png',
   },
   {
@@ -63,7 +63,7 @@ async function seedProducts() {
     if (!seller) {
       // Create a test seller user
       const bcrypt = require('bcryptjs');
-      const hashedPassword = await bcrypt.hash('Test123!', 10);
+      const hashedPassword = await bcrypt.hash('earn$10K', 10);
       
       seller = await User.create({
         email: 'seller@test.com',

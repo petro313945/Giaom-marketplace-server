@@ -175,12 +175,7 @@ export const approveSeller = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    if (sellerProfile.status === 'approved') {
-      res.status(400).json({ error: 'Seller is already approved' });
-      return;
-    }
-
-    // Update seller profile status
+    // Update seller profile status (admin can approve anytime, e.g. re-approve rejected)
     sellerProfile.status = 'approved';
     await sellerProfile.save();
 
@@ -220,14 +215,16 @@ export const rejectSeller = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    if (sellerProfile.status === 'rejected') {
-      res.status(400).json({ error: 'Seller is already rejected' });
-      return;
-    }
-
-    // Update seller profile status
+    // Update seller profile status (admin can reject anytime, e.g. revoke approved)
     sellerProfile.status = 'rejected';
     await sellerProfile.save();
+
+    // Revert user role to customer when revoking approval
+    const user = await User.findById(sellerProfile.userId);
+    if (user && user.role === 'seller') {
+      user.role = 'customer';
+      await user.save();
+    }
 
     res.json({
       message: 'Seller rejected successfully',

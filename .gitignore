@@ -51,6 +51,16 @@ Thumbs.db
 !/uploads/.gitkeep
 
 # MongoDB
+data/
+mongod.exe
+mongod
+*.wt
+WiredTiger*
+WiredTiger.wt
+WiredTiger.lock
+WiredTiger.turtle
+WiredTigerHS.wt
+storage.bson
 *.db
 *.sqlite
 *.sqlite3
