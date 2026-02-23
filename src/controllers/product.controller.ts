@@ -25,7 +25,8 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
     }
 
     if (search) {
-      // Use regex search for better compatibility (works without text index)
+      // Use regex search for flexible text matching
+      // The text index on title/description will still help with query performance
       query.$or = [
         { title: { $regex: search as string, $options: 'i' } },
         { description: { $regex: search as string, $options: 'i' } }
@@ -45,7 +46,15 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
 
     // Sort
     const sort: any = {};
-    sort[sortBy as string] = sortOrder === 'asc' ? 1 : -1;
+    // Handle special sort cases
+    if (sortBy === 'price') {
+      sort.price = sortOrder === 'asc' ? 1 : -1;
+    } else if (sortBy === 'title') {
+      sort.title = sortOrder === 'asc' ? 1 : -1;
+    } else {
+      // Default to createdAt
+      sort.createdAt = sortOrder === 'asc' ? 1 : -1;
+    }
 
     // Execute query
     const products = await Product.find(query)

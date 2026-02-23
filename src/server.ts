@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import path from 'path';
 import { connectDatabase } from './config/database';
 import { errorHandler } from './middleware/error.middleware';
+import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimit.middleware';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -23,8 +24,20 @@ const app: Express = express();
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
-// Middleware
-app.use(helmet()); // Security headers
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "http:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Allow images from external sources
+}));
+
+// CORS configuration
 app.use(cors({
   origin: [
     CLIENT_URL,
@@ -32,10 +45,17 @@ app.use(cors({
     'http://146.19.170.131:3000',
     /^http:\/\/146\.19\.170\.131/ // Allow any port on this IP
   ],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' })); // Limit JSON payload size
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Limit URL-encoded payload size
+
+// Apply rate limiting to all API routes
+app.use('/api', apiLimiter);
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -57,15 +77,15 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
+// API Routes with rate limiting
+app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limiting for auth
 app.use('/api/users', userRoutes);
 app.use('/api/sellers', sellerRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/upload', uploadRoutes);
+app.use('/api/upload', uploadLimiter, uploadRoutes); // Stricter rate limiting for uploads
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

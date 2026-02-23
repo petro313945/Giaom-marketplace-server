@@ -131,21 +131,62 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    // Check if user owns the order or is admin
+    // Check if user owns the order, is admin, or is a seller with products in this order
     const isOwner = req.user._id.toString() === order.userId.toString();
     const isAdmin = req.user.role === 'admin';
     
-    if (!isOwner && !isAdmin) {
+    // Check if user is a seller and has products in this order
+    let isSeller = false;
+    let sellerProductIds: string[] = [];
+    
+    if (!isOwner && !isAdmin && req.user.role === 'seller') {
+      // Get product IDs from order items (handle both ObjectId and populated object)
+      const productIds = order.items.map(item => {
+        const productId = item.productId as any;
+        return typeof productId === 'object' && productId._id ? productId._id.toString() : productId.toString();
+      });
+      
+      const products = await Product.find({ 
+        _id: { $in: productIds } 
+      });
+      
+      // Find products that belong to this seller
+      sellerProductIds = products
+        .filter(product => product.sellerId.toString() === req.user!._id.toString())
+        .map(product => product._id.toString());
+      
+      isSeller = sellerProductIds.length > 0;
+    }
+    
+    if (!isOwner && !isAdmin && !isSeller) {
       res.status(403).json({ error: 'Access denied' });
       return;
+    }
+
+    // For sellers, filter items to only show their products
+    let orderItems = order.items;
+    let orderTotal = order.totalAmount;
+    
+    if (isSeller && !isAdmin && sellerProductIds.length > 0) {
+      // Filter items to only include seller's products
+      orderItems = order.items.filter(item => {
+        const productId = item.productId as any;
+        const productIdStr = typeof productId === 'object' && productId._id 
+          ? productId._id.toString() 
+          : productId.toString();
+        return sellerProductIds.includes(productIdStr);
+      });
+      
+      // Calculate total for seller's items only
+      orderTotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     }
 
     res.json({
       order: {
         id: order._id,
         userId: order.userId,
-        items: order.items,
-        totalAmount: order.totalAmount,
+        items: orderItems,
+        totalAmount: orderTotal,
         shippingAddress: order.shippingAddress,
         status: order.status,
         createdAt: order.createdAt,

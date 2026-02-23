@@ -23,16 +23,33 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter - only allow images
-const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+// Allowed MIME types for images
+const allowedMimeTypes = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp'
+];
 
-  if (mimetype && extname) {
+// File filter - only allow images with strict validation
+const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  // Check file extension
+  const ext = path.extname(file.originalname).toLowerCase();
+  const allowedExtensions = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
+  
+  // Check MIME type
+  const isValidMimeType = allowedMimeTypes.includes(file.mimetype);
+  const isValidExtension = allowedExtensions.includes(ext);
+  
+  // Additional security: Check if filename is safe (no path traversal)
+  const filename = path.basename(file.originalname);
+  const isSafeFilename = /^[a-zA-Z0-9._-]+$/.test(filename.replace(ext, ''));
+  
+  if (isValidMimeType && isValidExtension && isSafeFilename) {
     return cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
+    cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp). Invalid file type or unsafe filename.'));
   }
 };
 
