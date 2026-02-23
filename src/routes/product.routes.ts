@@ -9,7 +9,8 @@ import {
   getPendingProducts,
   approveProduct,
   rejectProduct,
-  getAllProductsAdmin
+  getAllProductsAdmin,
+  getAdminProductStats
 } from '../controllers/product.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -25,6 +26,7 @@ router.get('/:id', validateId, getProductById);
 router.use(authenticate);
 
 // Admin only routes (must be before /:id routes to avoid route conflicts)
+router.get('/admin/stats', requireRole('admin'), getAdminProductStats);
 router.get('/admin/all', requireRole('admin'), getAllProductsAdmin);
 router.get('/pending/all', requireRole('admin'), getPendingProducts);
 router.put('/:id/approve', requireRole('admin'), approveProduct);

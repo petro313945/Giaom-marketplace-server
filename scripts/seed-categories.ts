@@ -8,13 +8,11 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/giaom-
 
 const defaultCategories = [
   { name: 'Electronics', slug: 'electronics', description: 'Electronic devices and gadgets' },
-  { name: 'Clothing', slug: 'clothing', description: 'Apparel and fashion items' },
-  { name: 'Home & Living', slug: 'home', description: 'Home decor and furniture' },
-  { name: 'Books', slug: 'books', description: 'Books and literature' },
-  { name: 'Sports & Outdoors', slug: 'sports', description: 'Sports equipment and outdoor gear' },
-  { name: 'Toys & Games', slug: 'toys', description: 'Toys and games for all ages' },
-  { name: 'Beauty & Personal Care', slug: 'beauty', description: 'Beauty products and personal care' },
-  { name: 'Food & Beverages', slug: 'food', description: 'Food and drink items' }
+  { name: 'Fashion', slug: 'fashion', description: 'Apparel and fashion items' },
+  { name: 'Home & Garden', slug: 'home-garden', description: 'Home decor, furniture, and garden supplies' },
+  { name: 'Sports', slug: 'sports', description: 'Sports equipment and outdoor gear' },
+  { name: 'Art', slug: 'art', description: 'Artwork, paintings, and creative pieces' },
+  { name: 'Books', slug: 'books', description: 'Books and literature' }
 ];
 
 async function seedCategories() {

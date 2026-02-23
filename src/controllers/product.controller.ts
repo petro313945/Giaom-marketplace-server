@@ -74,6 +74,7 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -126,6 +127,7 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -155,7 +157,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const { title, description, price, category, imageUrl } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls } = req.body;
 
     if (!title || !price || !category) {
       res.status(400).json({ error: 'Title, price, and category are required' });
@@ -167,13 +169,22 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    // Handle multiple images: prefer imageUrls array, fallback to imageUrl
+    let finalImageUrls: string[] = [];
+    if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
+      finalImageUrls = imageUrls.filter((url: string) => url && url.trim() !== '');
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      finalImageUrls = [imageUrl];
+    }
+
     const product = await Product.create({
       sellerId: req.user._id,
       title,
       description: description || '',
       price: Number(price),
       category,
-      imageUrl: imageUrl || '',
+      imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '', // Keep first image for backward compatibility
+      imageUrls: finalImageUrls,
       status: 'pending'
     });
 
@@ -187,6 +198,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls,
         status: product.status,
         createdAt: product.createdAt
       }
@@ -205,7 +217,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const { id } = req.params;
-    const { title, description, price, category, imageUrl } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -232,7 +244,21 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
       product.price = Number(price);
     }
     if (category) product.category = category;
-    if (imageUrl !== undefined) product.imageUrl = imageUrl;
+    
+    // Handle multiple images: prefer imageUrls array, fallback to imageUrl
+    if (imageUrls !== undefined) {
+      if (Array.isArray(imageUrls) && imageUrls.length > 0) {
+        product.imageUrls = imageUrls.filter((url: string) => url && url.trim() !== '');
+        product.imageUrl = product.imageUrls[0] || ''; // Keep first image for backward compatibility
+      } else {
+        product.imageUrls = [];
+        product.imageUrl = '';
+      }
+    } else if (imageUrl !== undefined) {
+      // If only imageUrl is provided, update both
+      product.imageUrl = imageUrl;
+      product.imageUrls = imageUrl ? [imageUrl] : [];
+    }
 
     // If updated by seller (not admin), reset status to pending
     if (isOwner && !isAdmin && product.status === 'approved') {
@@ -251,6 +277,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         status: product.status,
         updatedAt: product.updatedAt
       }
@@ -302,7 +329,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-// Get seller's own products
+// Get seller's own products (with pagination)
 export const getSellerProducts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -310,8 +337,17 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    const products = await Product.find({ sellerId: req.user._id })
-      .sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+
+    const [products, total] = await Promise.all([
+      Product.find({ sellerId: req.user._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Product.countDocuments({ sellerId: req.user._id })
+    ]);
 
     res.json({
       products: products.map(product => ({
@@ -322,11 +358,17 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
       })),
-      count: products.length
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to get seller products' });
@@ -359,7 +401,24 @@ export const getPendingProducts = async (req: AuthRequest, res: Response): Promi
   }
 };
 
-// Get all products (admin only - includes all statuses)
+// Get admin product stats (total and pending counts)
+export const getAdminProductStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+    const [total, pending] = await Promise.all([
+      Product.countDocuments(),
+      Product.countDocuments({ status: 'pending' })
+    ]);
+    res.json({ total, pending });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get product stats' });
+  }
+};
+
+// Get all products (admin only - includes all statuses, with pagination)
 export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -372,9 +431,20 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const products = await Product.find()
-      .populate('sellerId', 'email fullName')
-      .sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+    const status = req.query.status as string | undefined;
+    const query = status ? { status } : {};
+
+    const [products, total] = await Promise.all([
+      Product.find(query)
+        .populate('sellerId', 'email fullName')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Product.countDocuments(query)
+    ]);
 
     res.json({
       products: products.map(product => ({
@@ -386,11 +456,17 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
       })),
-      count: products.length
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to get all products' });

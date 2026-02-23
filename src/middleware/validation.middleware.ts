@@ -103,6 +103,14 @@ export const validateUpdateProduct = [
     .isURL()
     .withMessage('Image URL must be a valid URL')
     .optional(),
+  body('imageUrls')
+    .isArray()
+    .withMessage('Image URLs must be an array')
+    .optional(),
+  body('imageUrls.*')
+    .isString()
+    .trim()
+    .optional(),
   handleValidationErrors
 ];
 

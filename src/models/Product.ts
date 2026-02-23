@@ -6,7 +6,8 @@ export interface IProduct extends Document {
   description?: string;
   price: number;
   category: string;
-  imageUrl?: string;
+  imageUrl?: string; // Keep for backward compatibility
+  imageUrls?: string[]; // New: array of image URLs
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +42,10 @@ const ProductSchema: Schema = new Schema(
     imageUrl: {
       type: String,
       trim: true
+    },
+    imageUrls: {
+      type: [String],
+      default: []
     },
     status: {
       type: String,
