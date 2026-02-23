@@ -473,7 +473,7 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
   }
 };
 
-// Approve product (admin only)
+// Approve product (admin only - can change status at any time)
 export const approveProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -481,11 +481,6 @@ export const approveProduct = async (req: AuthRequest, res: Response): Promise<v
     const product = await Product.findById(id);
     if (!product) {
       res.status(404).json({ error: 'Product not found' });
-      return;
-    }
-
-    if (product.status === 'approved') {
-      res.status(400).json({ error: 'Product is already approved' });
       return;
     }
 
@@ -510,7 +505,7 @@ export const approveProduct = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
-// Reject product (admin only)
+// Reject product (admin only - can change status at any time)
 export const rejectProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -518,11 +513,6 @@ export const rejectProduct = async (req: AuthRequest, res: Response): Promise<vo
     const product = await Product.findById(id);
     if (!product) {
       res.status(404).json({ error: 'Product not found' });
-      return;
-    }
-
-    if (product.status === 'rejected') {
-      res.status(400).json({ error: 'Product is already rejected' });
       return;
     }
 
