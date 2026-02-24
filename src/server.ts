@@ -16,6 +16,9 @@ import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import categoryRoutes from './routes/category.routes';
 import uploadRoutes from './routes/upload.routes';
+import addressRoutes from './routes/address.routes';
+import wishlistRoutes from './routes/wishlist.routes';
+import reviewRoutes from './routes/review.routes';
 
 // Load environment variables
 dotenv.config();
@@ -86,6 +89,9 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/upload', uploadLimiter, uploadRoutes); // Stricter rate limiting for uploads
+app.use('/api/addresses', addressRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

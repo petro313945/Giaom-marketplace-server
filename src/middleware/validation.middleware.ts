@@ -171,6 +171,14 @@ export const validateId = [
   handleValidationErrors
 ];
 
+// Product ID parameter validation
+export const validateProductId = [
+  param('productId')
+    .isMongoId()
+    .withMessage('Invalid product ID format'),
+  handleValidationErrors
+];
+
 // Query parameter validation for products
 export const validateProductQuery = [
   query('page')
@@ -197,5 +205,18 @@ export const validateProductQuery = [
     .optional()
     .isIn(['asc', 'desc'])
     .withMessage('Sort order must be asc or desc'),
+  handleValidationErrors
+];
+
+// Review validation
+export const validateReviewSubmission = [
+  body('rating')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Rating must be between 1 and 5'),
+  body('comment')
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Comment must be less than 1000 characters')
+    .optional(),
   handleValidationErrors
 ];
