@@ -19,6 +19,7 @@ import uploadRoutes from './routes/upload.routes';
 import addressRoutes from './routes/address.routes';
 import wishlistRoutes from './routes/wishlist.routes';
 import reviewRoutes from './routes/review.routes';
+import reportRoutes from './routes/report.routes';
 
 // Load environment variables
 dotenv.config();
@@ -92,6 +93,7 @@ app.use('/api/upload', uploadLimiter, uploadRoutes); // Stricter rate limiting f
 app.use('/api/addresses', addressRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
