@@ -72,6 +72,16 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
       return;
     }
 
+    // Check if product has variants - if so, variant must be provided
+    if (product.variants && product.variants.length > 0) {
+      if (!variant || (!variant.size && !variant.color)) {
+        res.status(400).json({ 
+          error: 'This product has variants. Please select a variant (size/color) before adding to cart.' 
+        });
+        return;
+      }
+    }
+
     // Check stock availability - use variant stock if variant is provided, otherwise use product stock
     let availableStock: number;
     if (variant && (variant.size || variant.color)) {
@@ -90,6 +100,14 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
       availableStock = matchingVariant.stock;
     } else {
       availableStock = product.stockQuantity;
+    }
+
+    // Validate stock availability
+    if (availableStock === undefined || availableStock === null || availableStock < 0) {
+      res.status(400).json({ 
+        error: 'Product stock information is invalid. Please contact support.' 
+      });
+      return;
     }
 
     if (availableStock < quantity) {

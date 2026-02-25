@@ -14,6 +14,13 @@ const exampleProducts = [
     price: 89.99,
     category: 'electronics',
     imageUrl: '/wireless-headphones.png',
+    imageUrls: ['/wireless-headphones.png', '/wireless-headphones-2.png'],
+    stockQuantity: 50,
+    variants: [
+      { color: 'Black', stock: 25 },
+      { color: 'White', stock: 15 },
+      { color: 'Blue', stock: 10 },
+    ],
   },
   {
     title: 'Vintage Leather Bag',
@@ -21,6 +28,13 @@ const exampleProducts = [
     price: 129.99,
     category: 'fashion',
     imageUrl: '/vintage-leather-bag.jpg',
+    imageUrls: ['/vintage-leather-bag.jpg', '/vintage-leather-bag-2.jpg'],
+    stockQuantity: 30,
+    variants: [
+      { color: 'Brown', stock: 15 },
+      { color: 'Black', stock: 10 },
+      { color: 'Tan', stock: 5 },
+    ],
   },
   {
     title: 'Handmade Ceramic Mug',
@@ -28,6 +42,8 @@ const exampleProducts = [
     price: 24.99,
     category: 'home-garden',
     imageUrl: '/ceramic-mug.png',
+    imageUrls: ['/ceramic-mug.png'],
+    stockQuantity: 100,
   },
   {
     title: 'Smart Watch',
@@ -35,6 +51,13 @@ const exampleProducts = [
     price: 199.99,
     category: 'electronics',
     imageUrl: '/smartwatch-lifestyle.png',
+    imageUrls: ['/smartwatch-lifestyle.png', '/smartwatch-detail.png'],
+    stockQuantity: 40,
+    variants: [
+      { color: 'Black', stock: 20 },
+      { color: 'Silver', stock: 15 },
+      { color: 'Rose Gold', stock: 5 },
+    ],
   },
   {
     title: 'Organic Cotton T-Shirt',
@@ -42,6 +65,16 @@ const exampleProducts = [
     price: 29.99,
     category: 'fashion',
     imageUrl: '/cotton-tshirt.png',
+    imageUrls: ['/cotton-tshirt.png'],
+    stockQuantity: 75,
+    variants: [
+      { size: 'S', color: 'White', stock: 15 },
+      { size: 'M', color: 'White', stock: 20 },
+      { size: 'L', color: 'White', stock: 15 },
+      { size: 'S', color: 'Black', stock: 10 },
+      { size: 'M', color: 'Black', stock: 10 },
+      { size: 'L', color: 'Black', stock: 5 },
+    ],
   },
   {
     title: 'Yoga Mat',
@@ -49,6 +82,13 @@ const exampleProducts = [
     price: 39.99,
     category: 'sports',
     imageUrl: '/rolled-yoga-mat.png',
+    imageUrls: ['/rolled-yoga-mat.png'],
+    stockQuantity: 60,
+    variants: [
+      { color: 'Purple', stock: 20 },
+      { color: 'Blue', stock: 20 },
+      { color: 'Pink', stock: 20 },
+    ],
   },
 ];
 

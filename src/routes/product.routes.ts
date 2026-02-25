@@ -10,7 +10,8 @@ import {
   approveProduct,
   rejectProduct,
   getAllProductsAdmin,
-  getAdminProductStats
+  getAdminProductStats,
+  getProductPurchaseStats
 } from '../controllers/product.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -20,6 +21,7 @@ const router = Router();
 
 // Public routes
 router.get('/', validateProductQuery, getAllProducts);
+router.get('/:id/purchase-stats', validateId, getProductPurchaseStats);
 router.get('/:id', validateId, getProductById);
 
 // Protected routes (require authentication)

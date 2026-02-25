@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import Product from '../models/Product';
 import SellerProfile from '../models/SellerProfile';
+import Order from '../models/Order';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // Get all approved products (with filters)
@@ -143,6 +144,50 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
     res.status(500).json({ error: error.message || 'Failed to get product' });
+  }
+};
+
+// Get product purchase statistics
+export const getProductPurchaseStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({ error: 'Product ID is required' });
+      return;
+    }
+
+    // Calculate date for past month
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    // Find all orders in the past month that contain this product
+    const orders = await Order.find({
+      createdAt: { $gte: oneMonthAgo },
+      status: { $ne: 'cancelled' } // Exclude cancelled orders
+    });
+
+    // Count total quantity purchased for this product
+    let totalQuantity = 0;
+    orders.forEach(order => {
+      order.items.forEach(item => {
+        if (item.productId.toString() === id) {
+          totalQuantity += item.quantity;
+        }
+      });
+    });
+
+    res.json({
+      productId: id,
+      purchaseCount: totalQuantity,
+      period: 'past month'
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid product ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to get product purchase stats' });
   }
 };
 
