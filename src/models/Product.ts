@@ -1,5 +1,12 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface IProductVariant {
+  size?: string;
+  color?: string;
+  price?: number; // Optional: if not provided, use product base price
+  stock: number;
+}
+
 export interface IProduct extends Document {
   sellerId: mongoose.Types.ObjectId;
   title: string;
@@ -8,6 +15,8 @@ export interface IProduct extends Document {
   category: string;
   imageUrl?: string; // Keep for backward compatibility
   imageUrls?: string[]; // New: array of image URLs
+  stockQuantity: number;
+  variants?: IProductVariant[]; // Product variants (size, color, price, stock)
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +54,21 @@ const ProductSchema: Schema = new Schema(
     },
     imageUrls: {
       type: [String],
+      default: []
+    },
+    stockQuantity: {
+      type: Number,
+      required: [true, 'Stock quantity is required'],
+      min: [0, 'Stock quantity cannot be negative'],
+      default: 0
+    },
+    variants: {
+      type: [{
+        size: { type: String, trim: true },
+        color: { type: String, trim: true },
+        price: { type: Number, min: [0, 'Variant price must be positive'] },
+        stock: { type: Number, required: true, min: [0, 'Variant stock cannot be negative'] }
+      }],
       default: []
     },
     status: {

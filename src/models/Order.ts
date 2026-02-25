@@ -5,6 +5,10 @@ export interface IOrderItem {
   quantity: number;
   price: number;
   title: string;
+  variant?: {
+    size?: string;
+    color?: string;
+  };
 }
 
 export interface IShippingAddress {
@@ -23,6 +27,11 @@ export interface IOrder extends Document {
   totalAmount: number;
   shippingAddress: IShippingAddress;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  paymentIntentId?: string;
+  paymentStatus?: 'pending' | 'succeeded' | 'failed' | 'refunded';
+  paymentMethod?: string;
+  trackingNumber?: string;
+  carrier?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +53,10 @@ const OrderItemSchema: Schema = new Schema({
   title: {
     type: String,
     required: true
+  },
+  variant: {
+    size: { type: String, trim: true },
+    color: { type: String, trim: true }
   }
 });
 
@@ -97,6 +110,27 @@ const OrderSchema: Schema = new Schema(
       type: String,
       enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
       default: 'pending'
+    },
+    paymentIntentId: {
+      type: String,
+      default: null
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'succeeded', 'failed', 'refunded'],
+      default: 'pending'
+    },
+    paymentMethod: {
+      type: String,
+      default: null
+    },
+    trackingNumber: {
+      type: String,
+      default: null
+    },
+    carrier: {
+      type: String,
+      default: null
     }
   },
   {

@@ -37,6 +37,5 @@ const PasswordResetTokenSchema: Schema = new Schema(
 
 // Index for faster queries
 PasswordResetTokenSchema.index({ userId: 1 });
-PasswordResetTokenSchema.index({ token: 1 });
 
 export default mongoose.model<IPasswordResetToken>('PasswordResetToken', PasswordResetTokenSchema);

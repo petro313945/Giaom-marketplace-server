@@ -40,7 +40,6 @@ const WishlistSchema: Schema = new Schema(
 );
 
 // Index for faster queries
-WishlistSchema.index({ userId: 1 });
 WishlistSchema.index({ 'items.productId': 1 });
 
 // Prevent duplicate products in wishlist

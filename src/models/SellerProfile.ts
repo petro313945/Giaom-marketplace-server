@@ -38,7 +38,6 @@ const SellerProfileSchema: Schema = new Schema(
 );
 
 // Indexes
-SellerProfileSchema.index({ userId: 1 });
 SellerProfileSchema.index({ status: 1 });
 
 export default mongoose.model<ISellerProfile>('SellerProfile', SellerProfileSchema);

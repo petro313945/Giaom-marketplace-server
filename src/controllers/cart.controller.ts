@@ -28,7 +28,8 @@ export const getCart = async (req: AuthRequest, res: Response): Promise<void> =>
         items: cart.items.map(item => ({
           id: item._id,
           productId: item.productId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          variant: item.variant || undefined
         })),
         createdAt: cart.createdAt,
         updatedAt: cart.updatedAt
@@ -47,7 +48,7 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
       return;
     }
 
-    const { productId, quantity = 1 } = req.body;
+    const { productId, quantity = 1, variant } = req.body;
 
     if (!productId) {
       res.status(400).json({ error: 'Product ID is required' });
@@ -71,6 +72,33 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
       return;
     }
 
+    // Check stock availability - use variant stock if variant is provided, otherwise use product stock
+    let availableStock: number;
+    if (variant && (variant.size || variant.color)) {
+      // Find matching variant
+      const matchingVariant = product.variants?.find((v: any) => {
+        const sizeMatch = !variant.size || v.size === variant.size;
+        const colorMatch = !variant.color || v.color === variant.color;
+        return sizeMatch && colorMatch;
+      });
+
+      if (!matchingVariant) {
+        res.status(400).json({ error: 'Selected variant not found for this product' });
+        return;
+      }
+
+      availableStock = matchingVariant.stock;
+    } else {
+      availableStock = product.stockQuantity;
+    }
+
+    if (availableStock < quantity) {
+      res.status(400).json({ 
+        error: `Insufficient stock. Available: ${availableStock}, Requested: ${quantity}` 
+      });
+      return;
+    }
+
     // Get or create cart
     let cart = await Cart.findOne({ userId: req.user._id });
     if (!cart) {
@@ -80,19 +108,42 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
       });
     }
 
-    // Check if item already exists in cart
-    const existingItemIndex = cart.items.findIndex(
-      item => item.productId.toString() === productId
-    );
+    // Check if item already exists in cart (match by productId and variant)
+    const existingItemIndex = cart.items.findIndex(item => {
+      const productMatch = item.productId.toString() === productId;
+      if (!variant || (!variant.size && !variant.color)) {
+        // No variant specified - match only by productId and no variant
+        return productMatch && !item.variant;
+      }
+      // Variant specified - match by productId and variant
+      if (!productMatch) return false;
+      if (!item.variant) return false;
+      const sizeMatch = !variant.size || item.variant.size === variant.size;
+      const colorMatch = !variant.color || item.variant.color === variant.color;
+      return sizeMatch && colorMatch;
+    });
 
+    let newQuantity: number;
     if (existingItemIndex > -1) {
       // Update quantity
-      cart.items[existingItemIndex].quantity += quantity;
+      newQuantity = cart.items[existingItemIndex].quantity + quantity;
+      // Check if total quantity exceeds stock
+      if (availableStock < newQuantity) {
+        res.status(400).json({ 
+          error: `Insufficient stock. Available: ${availableStock}, Total in cart: ${newQuantity}` 
+        });
+        return;
+      }
+      cart.items[existingItemIndex].quantity = newQuantity;
     } else {
       // Add new item
       cart.items.push({
         productId: product._id,
-        quantity
+        quantity,
+        variant: variant && (variant.size || variant.color) ? {
+          size: variant.size,
+          color: variant.color
+        } : undefined
       } as ICartItem);
     }
 
@@ -106,7 +157,8 @@ export const addToCart = async (req: AuthRequest, res: Response): Promise<void> 
         items: cart.items.map(item => ({
           id: item._id,
           productId: item.productId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          variant: item.variant || undefined
         }))
       }
     });
@@ -150,6 +202,40 @@ export const updateCartItem = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
+    // Check stock availability for the updated quantity
+    const product = await Product.findById(cart.items[itemIndex].productId);
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    // Check variant stock if variant is present
+    const cartItem = cart.items[itemIndex];
+    let availableStock: number;
+    if (cartItem.variant && (cartItem.variant.size || cartItem.variant.color)) {
+      const matchingVariant = product.variants?.find((v: any) => {
+        const sizeMatch = !cartItem.variant?.size || v.size === cartItem.variant.size;
+        const colorMatch = !cartItem.variant?.color || v.color === cartItem.variant.color;
+        return sizeMatch && colorMatch;
+      });
+
+      if (!matchingVariant) {
+        res.status(400).json({ error: 'Selected variant not found for this product' });
+        return;
+      }
+
+      availableStock = matchingVariant.stock;
+    } else {
+      availableStock = product.stockQuantity;
+    }
+
+    if (availableStock < quantity) {
+      res.status(400).json({ 
+        error: `Insufficient stock. Available: ${availableStock}, Requested: ${quantity}` 
+      });
+      return;
+    }
+
     cart.items[itemIndex].quantity = quantity;
     await cart.save();
     await cart.populate('items.productId');
@@ -161,7 +247,8 @@ export const updateCartItem = async (req: AuthRequest, res: Response): Promise<v
         items: cart.items.map(item => ({
           id: item._id,
           productId: item.productId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          variant: item.variant || undefined
         }))
       }
     });
@@ -204,7 +291,8 @@ export const removeFromCart = async (req: AuthRequest, res: Response): Promise<v
         items: cart.items.map(item => ({
           id: item._id,
           productId: item.productId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          variant: item.variant || undefined
         }))
       }
     });

@@ -75,6 +75,8 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -128,6 +130,8 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -157,7 +161,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const { title, description, price, category, imageUrl, imageUrls } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants } = req.body;
 
     if (!title || !price || !category) {
       res.status(400).json({ error: 'Title, price, and category are required' });
@@ -169,6 +173,49 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    // Check if product has variants
+    const hasVariants = variants && Array.isArray(variants) && variants.length > 0;
+
+    // Validate stock quantity based on whether variants exist
+    if (hasVariants) {
+      // If variants exist, base stockQuantity is optional (will be set to 0)
+      if (stockQuantity !== undefined && (isNaN(stockQuantity) || stockQuantity < 0)) {
+        res.status(400).json({ error: 'Stock quantity must be a non-negative number' });
+        return;
+      }
+    } else {
+      // If no variants, stockQuantity is required
+      if (stockQuantity === undefined || isNaN(stockQuantity) || stockQuantity < 0) {
+        res.status(400).json({ error: 'Stock quantity is required for products without variants' });
+        return;
+      }
+    }
+
+    // Validate variants if provided
+    if (variants !== undefined) {
+      if (!Array.isArray(variants)) {
+        res.status(400).json({ error: 'Variants must be an array' });
+        return;
+      }
+      if (variants.length > 0) {
+        for (const variant of variants) {
+          // Each variant must have at least size or color
+          if (!variant.size && !variant.color) {
+            res.status(400).json({ error: 'Each variant must have at least a size or color' });
+            return;
+          }
+          if (variant.stock === undefined || isNaN(variant.stock) || variant.stock < 0) {
+            res.status(400).json({ error: 'Each variant must have a valid stock quantity (non-negative number)' });
+            return;
+          }
+          if (variant.price !== undefined && (isNaN(variant.price) || variant.price < 0)) {
+            res.status(400).json({ error: 'Variant price must be a positive number if provided' });
+            return;
+          }
+        }
+      }
+    }
+
     // Handle multiple images: prefer imageUrls array, fallback to imageUrl
     let finalImageUrls: string[] = [];
     if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
@@ -177,6 +224,9 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       finalImageUrls = [imageUrl];
     }
 
+    // Determine final stock quantity: if variants exist, use 0 for base stock; otherwise use provided stockQuantity
+    const finalStockQuantity = hasVariants ? 0 : (stockQuantity !== undefined ? Number(stockQuantity) : 0);
+    
     const product = await Product.create({
       sellerId: req.user._id,
       title,
@@ -185,6 +235,13 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       category,
       imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '', // Keep first image for backward compatibility
       imageUrls: finalImageUrls,
+      stockQuantity: finalStockQuantity,
+      variants: variants && Array.isArray(variants) && variants.length > 0 ? variants.map((v: any) => ({
+        size: v.size || undefined,
+        color: v.color || undefined,
+        price: v.price !== undefined ? Number(v.price) : undefined,
+        stock: Number(v.stock)
+      })) : [],
       status: 'pending'
     });
 
@@ -199,6 +256,8 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls,
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt
       }
@@ -217,7 +276,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const { id } = req.params;
-    const { title, description, price, category, imageUrl, imageUrls } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -244,6 +303,59 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
       product.price = Number(price);
     }
     if (category) product.category = category;
+
+    // Handle variants first to determine if we need base stock
+    const hasVariants = variants !== undefined && Array.isArray(variants) && variants.length > 0;
+    
+    if (variants !== undefined) {
+      if (!Array.isArray(variants)) {
+        res.status(400).json({ error: 'Variants must be an array' });
+        return;
+      }
+      if (variants.length > 0) {
+        for (const variant of variants) {
+          // Each variant must have at least size or color
+          if (!variant.size && !variant.color) {
+            res.status(400).json({ error: 'Each variant must have at least a size or color' });
+            return;
+          }
+          if (variant.stock === undefined || isNaN(variant.stock) || variant.stock < 0) {
+            res.status(400).json({ error: 'Each variant must have a valid stock quantity (non-negative number)' });
+            return;
+          }
+          if (variant.price !== undefined && (isNaN(variant.price) || variant.price < 0)) {
+            res.status(400).json({ error: 'Variant price must be a positive number if provided' });
+            return;
+          }
+        }
+        product.variants = variants.map((v: any) => ({
+          size: v.size || undefined,
+          color: v.color || undefined,
+          price: v.price !== undefined ? Number(v.price) : undefined,
+          stock: Number(v.stock)
+        }));
+        // If variants exist, set base stock to 0
+        product.stockQuantity = 0;
+      } else {
+        // Empty variants array means remove variants
+        product.variants = [];
+      }
+    }
+
+    // Handle stock quantity: only update if no variants exist
+    if (stockQuantity !== undefined) {
+      if (isNaN(stockQuantity) || stockQuantity < 0) {
+        res.status(400).json({ error: 'Stock quantity must be a non-negative number' });
+        return;
+      }
+      // Only set stockQuantity if we don't have variants (or are removing variants)
+      if (!hasVariants) {
+        product.stockQuantity = Number(stockQuantity);
+      }
+    } else if (hasVariants) {
+      // If variants exist but stockQuantity not provided, ensure it's 0
+      product.stockQuantity = 0;
+    }
     
     // Handle multiple images: prefer imageUrls array, fallback to imageUrl
     if (imageUrls !== undefined) {
@@ -278,6 +390,8 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         updatedAt: product.updatedAt
       }
@@ -359,6 +473,8 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -391,6 +507,9 @@ export const getPendingProducts = async (req: AuthRequest, res: Response): Promi
         price: product.price,
         category: product.category,
         imageUrl: product.imageUrl,
+        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt
       })),
@@ -457,6 +576,8 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        stockQuantity: product.stockQuantity,
+        variants: product.variants || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt

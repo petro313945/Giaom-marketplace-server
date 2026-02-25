@@ -40,7 +40,6 @@ const CategorySchema: Schema = new Schema(
 );
 
 // Indexes
-CategorySchema.index({ slug: 1 });
 CategorySchema.index({ isActive: 1 });
 
 export default mongoose.model<ICategory>('Category', CategorySchema);

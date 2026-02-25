@@ -7,6 +7,7 @@ import PasswordResetToken from '../models/PasswordResetToken';
 import { JWT_CONFIG } from '../config/jwt';
 import { createError } from '../utils/errors';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { sendPasswordResetEmail } from '../utils/emailService';
 
 // Generate JWT tokens
 const generateTokens = (userId: string) => {
@@ -217,13 +218,17 @@ export const requestPasswordReset = async (req: Request, res: Response): Promise
         expiresAt
       });
 
-      // In a real application, you would send an email here with the reset link
-      // For now, we'll return the token in development mode only
-      // In production, you would send: `${CLIENT_URL}/reset-password?token=${token}`
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`Password reset token for ${user.email}: ${token}`);
-        console.log(`Reset link: ${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password?token=${token}`);
+      // Send password reset email
+      try {
+        await sendPasswordResetEmail(user.email, user.fullName || 'Customer', token);
+      } catch (error: any) {
+        // Log error but don't fail the request (security best practice)
+        console.error('Failed to send password reset email:', error.message);
+        // In development, still log the token for testing
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Password reset token for ${user.email}: ${token}`);
+          console.log(`Reset link: ${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password?token=${token}`);
+        }
       }
     }
 

@@ -51,7 +51,6 @@ ReviewSchema.index({ productId: 1, userId: 1 }, { unique: true });
 
 // Index for faster queries
 ReviewSchema.index({ productId: 1, status: 1 });
-ReviewSchema.index({ userId: 1 });
 ReviewSchema.index({ createdAt: -1 });
 
 export default mongoose.model<IReview>('Review', ReviewSchema);

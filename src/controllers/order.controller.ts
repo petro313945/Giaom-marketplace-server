@@ -2,7 +2,10 @@ import { Response } from 'express';
 import Order from '../models/Order';
 import Cart from '../models/Cart';
 import Product from '../models/Product';
+import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { getStripe } from '../config/stripe';
+import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, sendLowStockAlertEmail } from '../utils/emailService';
 
 // Create order from cart
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -12,11 +15,16 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const { shippingAddress } = req.body;
+    const { shippingAddress, paymentIntentId } = req.body;
 
     if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.address ||
         !shippingAddress.city || !shippingAddress.zipCode || !shippingAddress.country) {
       res.status(400).json({ error: 'Complete shipping address is required' });
+      return;
+    }
+
+    if (!paymentIntentId) {
+      res.status(400).json({ error: 'Payment intent ID is required' });
       return;
     }
 
@@ -44,29 +52,177 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
         return;
       }
 
-      const itemTotal = product.price * cartItem.quantity;
+      // Check stock availability - use variant stock if variant is provided
+      let availableStock: number;
+      let itemPrice: number;
+      
+      if (cartItem.variant && (cartItem.variant.size || cartItem.variant.color)) {
+        // Find matching variant
+        const matchingVariant = product.variants?.find((v: any) => {
+          const sizeMatch = !cartItem.variant?.size || v.size === cartItem.variant.size;
+          const colorMatch = !cartItem.variant?.color || v.color === cartItem.variant.color;
+          return sizeMatch && colorMatch;
+        });
+
+        if (!matchingVariant) {
+          res.status(400).json({ error: `Selected variant not found for ${product.title}` });
+          return;
+        }
+
+        availableStock = matchingVariant.stock;
+        itemPrice = matchingVariant.price !== undefined ? matchingVariant.price : product.price;
+      } else {
+        availableStock = product.stockQuantity;
+        itemPrice = product.price;
+      }
+
+      if (availableStock < cartItem.quantity) {
+        res.status(400).json({ 
+          error: `Insufficient stock for ${product.title}. Available: ${availableStock}, Requested: ${cartItem.quantity}` 
+        });
+        return;
+      }
+
+      const itemTotal = itemPrice * cartItem.quantity;
       totalAmount += itemTotal;
 
       orderItems.push({
         productId: product._id,
         quantity: cartItem.quantity,
-        price: product.price,
-        title: product.title
+        price: itemPrice,
+        title: product.title,
+        variant: cartItem.variant && (cartItem.variant.size || cartItem.variant.color) ? {
+          size: cartItem.variant.size,
+          color: cartItem.variant.color
+        } : undefined
       });
     }
 
-    // Create order
+    // Add tax (8%)
+    const tax = totalAmount * 0.08;
+    const finalAmount = totalAmount + tax;
+
+    // Verify payment intent
+    let paymentIntent;
+    try {
+      const stripe = getStripe();
+      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    } catch (error: any) {
+      res.status(400).json({ error: 'Invalid payment intent' });
+      return;
+    }
+
+    // Verify payment intent belongs to user
+    if (paymentIntent.metadata.userId !== req.user._id.toString()) {
+      res.status(403).json({ error: 'Payment intent does not belong to this user' });
+      return;
+    }
+
+    // Verify payment status
+    if (paymentIntent.status !== 'succeeded') {
+      res.status(400).json({ 
+        error: `Payment not completed. Status: ${paymentIntent.status}` 
+      });
+      return;
+    }
+
+    // Verify amount matches
+    const expectedAmount = Math.round(finalAmount * 100); // Convert to cents
+    if (paymentIntent.amount !== expectedAmount) {
+      res.status(400).json({ 
+        error: 'Payment amount does not match order total' 
+      });
+      return;
+    }
+
+    // Decrease stock for all products in the order and check for low stock alerts
+    for (const item of orderItems) {
+      const product = await Product.findById(item.productId).populate('sellerId');
+      if (product) {
+        if (item.variant && (item.variant.size || item.variant.color)) {
+          // Update variant stock
+          const variantIndex = product.variants?.findIndex((v: any) => {
+            const sizeMatch = !item.variant?.size || v.size === item.variant.size;
+            const colorMatch = !item.variant?.color || v.color === item.variant.color;
+            return sizeMatch && colorMatch;
+          });
+
+          if (variantIndex !== undefined && variantIndex >= 0 && product.variants) {
+            const previousVariantStock = product.variants[variantIndex].stock;
+            product.variants[variantIndex].stock -= item.quantity;
+            
+            // Send low stock alert if variant stock falls below 10
+            if (previousVariantStock >= 10 && product.variants[variantIndex].stock < 10 && product.variants[variantIndex].stock > 0) {
+              try {
+                const seller = product.sellerId as any;
+                if (seller && seller.email) {
+                  const variantLabel = [item.variant.size, item.variant.color].filter(Boolean).join(' / ') || 'variant';
+                  sendLowStockAlertEmail(
+                    seller.email,
+                    seller.fullName || 'Seller',
+                    `${product.title} (${variantLabel})`,
+                    product.variants[variantIndex].stock
+                  ).catch((error) => console.error('Failed to send low stock alert email:', error));
+                }
+              } catch (error) {
+                console.error('Error preparing low stock alert email:', error);
+              }
+            }
+          }
+        } else {
+          // Update product stock
+          const previousStock = product.stockQuantity;
+          product.stockQuantity -= item.quantity;
+          
+          // Send low stock alert if stock falls below 10 (and wasn't already below 10)
+          if (previousStock >= 10 && product.stockQuantity < 10 && product.stockQuantity > 0) {
+            try {
+              const seller = product.sellerId as any;
+              if (seller && seller.email) {
+                sendLowStockAlertEmail(
+                  seller.email,
+                  seller.fullName || 'Seller',
+                  product.title,
+                  product.stockQuantity
+                ).catch((error) => console.error('Failed to send low stock alert email:', error));
+              }
+            } catch (error) {
+              console.error('Error preparing low stock alert email:', error);
+            }
+          }
+        }
+        await product.save();
+      }
+    }
+
+    // Create order with payment information
     const order = await Order.create({
       userId: req.user._id,
       items: orderItems,
-      totalAmount,
+      totalAmount: finalAmount,
       shippingAddress,
-      status: 'pending'
+      status: 'pending',
+      paymentIntentId: paymentIntent.id,
+      paymentStatus: 'succeeded',
+      paymentMethod: paymentIntent.payment_method ? 'card' : 'unknown'
     });
 
     // Clear cart after order creation
     cart.items = [];
     await cart.save();
+
+    // Send order confirmation email (async, don't wait for it)
+    try {
+      const user = await User.findById(req.user._id);
+      if (user) {
+        sendOrderConfirmationEmail(user.email, user.fullName || 'Customer', order).catch(
+          (error) => console.error('Failed to send order confirmation email:', error)
+        );
+      }
+    } catch (error) {
+      // Email failure shouldn't break the order creation
+      console.error('Error preparing order confirmation email:', error);
+    }
 
     res.status(201).json({
       message: 'Order created successfully',
@@ -77,6 +233,11 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
         totalAmount: order.totalAmount,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        paymentIntentId: order.paymentIntentId,
+        paymentStatus: order.paymentStatus,
+        paymentMethod: order.paymentMethod,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
         createdAt: order.createdAt
       }
     });
@@ -105,6 +266,8 @@ export const getUserOrders = async (req: AuthRequest, res: Response): Promise<vo
         totalAmount: order.totalAmount,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt
       })),
@@ -189,6 +352,8 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
         totalAmount: orderTotal,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt
       }
@@ -234,6 +399,8 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
         totalAmount: order.totalAmount,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt
       })),
@@ -289,8 +456,54 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
+    const previousStatus = order.status;
     order.status = status;
     await order.save();
+
+    // If order is being cancelled, restore stock
+    if (status === 'cancelled' && previousStatus !== 'cancelled') {
+      for (const item of order.items) {
+        const product = await Product.findById(item.productId);
+        if (product) {
+          if (item.variant && (item.variant.size || item.variant.color)) {
+            // Restore variant stock
+            const variantIndex = product.variants?.findIndex((v: any) => {
+              const sizeMatch = !item.variant?.size || v.size === item.variant.size;
+              const colorMatch = !item.variant?.color || v.color === item.variant.color;
+              return sizeMatch && colorMatch;
+            });
+
+            if (variantIndex !== undefined && variantIndex >= 0 && product.variants) {
+              product.variants[variantIndex].stock += item.quantity;
+            }
+          } else {
+            // Restore product stock
+            product.stockQuantity += item.quantity;
+          }
+          await product.save();
+        }
+      }
+    }
+
+    // Send order status update email (async, don't wait for it)
+    try {
+      const user = await User.findById(order.userId);
+      if (user && previousStatus !== status) {
+        // Populate order items for email
+        const populatedOrder = await Order.findById(order._id).populate('items.productId');
+        if (populatedOrder) {
+          sendOrderStatusUpdateEmail(
+            user.email,
+            user.fullName || 'Customer',
+            populatedOrder,
+            previousStatus
+          ).catch((error) => console.error('Failed to send order status update email:', error));
+        }
+      }
+    } catch (error) {
+      // Email failure shouldn't break the status update
+      console.error('Error preparing order status update email:', error);
+    }
 
     res.json({
       message: 'Order status updated successfully',
@@ -306,6 +519,93 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
       return;
     }
     res.status(500).json({ error: error.message || 'Failed to update order status' });
+  }
+};
+
+// Update tracking number
+export const updateTrackingNumber = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { trackingNumber, carrier } = req.body;
+
+    if (!trackingNumber || trackingNumber.trim() === '') {
+      res.status(400).json({ error: 'Tracking number is required' });
+      return;
+    }
+
+    const order = await Order.findById(id);
+    if (!order) {
+      res.status(404).json({ error: 'Order not found' });
+      return;
+    }
+
+    // Check permissions - only admin or seller with products in this order can update
+    const isAdmin = req.user.role === 'admin';
+    let isSeller = false;
+
+    if (!isAdmin) {
+      // Check if user is seller and owns products in this order
+      const products = await Product.find({ _id: { $in: order.items.map(item => item.productId) } });
+      isSeller = products.some(product => product.sellerId.toString() === req.user!._id.toString());
+    }
+
+    if (!isAdmin && !isSeller) {
+      res.status(403).json({ error: 'You do not have permission to update tracking information for this order' });
+      return;
+    }
+
+    // Update tracking information
+    order.trackingNumber = trackingNumber.trim();
+    order.carrier = carrier ? carrier.trim() : null;
+    
+    // If tracking number is being added and order is not yet shipped, update status to shipped
+    if (order.status !== 'shipped' && order.status !== 'delivered' && order.status !== 'cancelled') {
+      order.status = 'shipped';
+    }
+    
+    await order.save();
+
+    // Send order status update email if status changed (async, don't wait for it)
+    try {
+      const user = await User.findById(order.userId);
+      if (user) {
+        // Populate order items for email
+        const populatedOrder = await Order.findById(order._id).populate('items.productId');
+        if (populatedOrder) {
+          sendOrderStatusUpdateEmail(
+            user.email,
+            user.fullName || 'Customer',
+            populatedOrder,
+            'processing' // Previous status before adding tracking
+          ).catch((error) => console.error('Failed to send order status update email:', error));
+        }
+      }
+    } catch (error) {
+      // Email failure shouldn't break the tracking update
+      console.error('Error preparing order status update email:', error);
+    }
+
+    res.json({
+      message: 'Tracking number updated successfully',
+      order: {
+        id: order._id,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
+        status: order.status,
+        updatedAt: order.updatedAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to update tracking number' });
   }
 };
 
@@ -344,6 +644,8 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
         totalAmount: order.totalAmount,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt
       })),

@@ -3,6 +3,10 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface ICartItem {
   productId: mongoose.Types.ObjectId;
   quantity: number;
+  variant?: {
+    size?: string;
+    color?: string;
+  };
 }
 
 export interface ICart extends Document {
@@ -22,6 +26,10 @@ const CartItemSchema: Schema = new Schema({
     type: Number,
     required: true,
     min: [1, 'Quantity must be at least 1']
+  },
+  variant: {
+    size: { type: String, trim: true },
+    color: { type: String, trim: true }
   }
 });
 
@@ -39,8 +47,5 @@ const CartSchema: Schema = new Schema(
     timestamps: true
   }
 );
-
-// Index
-CartSchema.index({ userId: 1 });
 
 export default mongoose.model<ICart>('Cart', CartSchema);

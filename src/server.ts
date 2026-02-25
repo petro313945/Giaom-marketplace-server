@@ -1,5 +1,9 @@
 import express, { Express, Request, Response } from 'express';
 import dotenv from 'dotenv';
+
+// Load environment variables FIRST, before any other imports that might use them
+dotenv.config();
+
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
@@ -20,12 +24,12 @@ import addressRoutes from './routes/address.routes';
 import wishlistRoutes from './routes/wishlist.routes';
 import reviewRoutes from './routes/review.routes';
 import reportRoutes from './routes/report.routes';
-
-// Load environment variables
-dotenv.config();
+import paymentRoutes from './routes/payment.routes';
+import analyticsRoutes from './routes/analytics.routes';
+import payoutRoutes from './routes/payout.routes';
 
 const app: Express = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
 // Security middleware
@@ -94,6 +98,9 @@ app.use('/api/addresses', addressRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/payouts', payoutRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

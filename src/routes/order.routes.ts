@@ -5,6 +5,7 @@ import {
   getOrderById,
   getSellerOrders,
   updateOrderStatus,
+  updateTrackingNumber,
   getAllOrders
 } from '../controllers/order.controller';
 import { authenticate } from '../middleware/auth.middleware';
@@ -24,6 +25,7 @@ router.get('/:id', validateId, getOrderById);
 // Seller routes
 router.get('/seller/my-orders', requireRole('seller', 'admin'), getSellerOrders);
 router.put('/:id/status', validateId, updateOrderStatus); // Seller can update their product orders, admin can update any
+router.put('/:id/tracking', validateId, updateTrackingNumber); // Seller can update tracking for their product orders, admin can update any
 
 // Admin routes
 router.get('/admin/all', requireRole('admin'), getAllOrders);
