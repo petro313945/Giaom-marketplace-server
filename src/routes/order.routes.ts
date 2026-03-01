@@ -8,19 +8,21 @@ import {
   updateTrackingNumber,
   getAllOrders
 } from '../controllers/order.controller';
-import { authenticate } from '../middleware/auth.middleware';
+import { authenticate, optionalAuthenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
 import { validateCreateOrder, validateId } from '../middleware/validation.middleware';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate);
+// Create order route allows optional authentication (for guest checkout)
+router.post('/', optionalAuthenticate, validateCreateOrder, createOrder);
 
-// Customer routes
-router.post('/', validateCreateOrder, createOrder);
+// Get order by ID allows optional authentication (for guest order viewing)
+router.get('/:id', optionalAuthenticate, validateId, getOrderById);
+
+// All other routes require authentication
+router.use(authenticate);
 router.get('/', getUserOrders);
-router.get('/:id', validateId, getOrderById);
 
 // Seller routes
 router.get('/seller/my-orders', requireRole('seller', 'admin'), getSellerOrders);

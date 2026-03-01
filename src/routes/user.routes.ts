@@ -7,7 +7,8 @@ import {
   changeUserRole,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  resetUserPassword
 } from '../controllers/user.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -27,6 +28,7 @@ router.get('/', requireRole('admin'), getAllUsers);
 router.get('/:id', requireRole('admin'), getUserById);
 router.put('/:id', requireRole('admin'), updateUser);
 router.put('/:id/role', requireRole('admin'), changeUserRole);
+router.put('/:id/reset-password', requireRole('admin'), resetUserPassword);
 router.delete('/:id', requireRole('admin'), deleteUser);
 
 export default router;

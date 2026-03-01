@@ -22,7 +22,8 @@ export interface IShippingAddress {
 }
 
 export interface IOrder extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+  guestEmail?: string;
   items: IOrderItem[];
   totalAmount: number;
   shippingAddress: IShippingAddress;
@@ -94,7 +95,13 @@ const OrderSchema: Schema = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: false
+    },
+    guestEmail: {
+      type: String,
+      required: false,
+      trim: true,
+      lowercase: true
     },
     items: [OrderItemSchema],
     totalAmount: {

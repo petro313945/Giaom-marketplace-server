@@ -340,3 +340,45 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
     res.status(500).json({ error: error.message || 'Failed to delete user' });
   }
 };
+
+// Reset user password (admin only)
+export const resetUserPassword = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      res.status(400).json({ error: 'Password is required' });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    // Find user
+    const user = await User.findById(id);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update user password
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({
+      message: 'Password has been reset successfully'
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid user ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to reset password' });
+  }
+};

@@ -106,6 +106,12 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
+    // Get seller ID value (handles both populated and non-populated sellerId)
+    const sellerIdObj = typeof product.sellerId === 'object' && product.sellerId !== null 
+      ? ((product.sellerId as any)._id || product.sellerId)
+      : product.sellerId;
+    const sellerIdString = sellerIdObj.toString();
+
     // Only show approved products to non-owners/admins
     if (product.status !== 'approved') {
       if (!req.user) {
@@ -113,7 +119,7 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
         return;
       }
       // Allow seller to see their own products, or admin to see all
-      const isOwner = req.user._id.toString() === product.sellerId.toString();
+      const isOwner = req.user._id.toString() === sellerIdString;
       const isAdmin = req.user.role === 'admin';
       if (!isOwner && !isAdmin) {
         res.status(404).json({ error: 'Product not found' });
@@ -121,10 +127,31 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
       }
     }
 
+    // Get seller's business name from SellerProfile
+    let sellerBusinessName = null;
+    
+    try {
+      const sellerProfile = await SellerProfile.findOne({ userId: sellerIdObj });
+      if (sellerProfile) {
+        sellerBusinessName = sellerProfile.businessName;
+      }
+    } catch (error) {
+      // If seller profile not found, businessName will remain null
+      console.error('Error fetching seller profile:', error);
+    }
+
+    // Prepare sellerId object with businessName
+    const sellerIdResponseObj = typeof product.sellerId === 'object' && product.sellerId !== null
+      ? {
+          ...(product.sellerId as any).toObject ? (product.sellerId as any).toObject() : product.sellerId,
+          businessName: sellerBusinessName
+        }
+      : product.sellerId;
+
     res.json({
       product: {
         id: product._id,
-        sellerId: product.sellerId,
+        sellerId: sellerIdResponseObj,
         title: product.title,
         description: product.description,
         price: product.price,

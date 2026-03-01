@@ -3,12 +3,12 @@ import {
   createPaymentIntent,
   confirmPayment
 } from '../controllers/payment.controller';
-import { authenticate } from '../middleware/auth.middleware';
+import { optionalAuthenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate);
+// Use optional authentication - allows both authenticated and guest users
+router.use(optionalAuthenticate);
 
 // Create payment intent
 router.post('/create-intent', createPaymentIntent);

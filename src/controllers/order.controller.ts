@@ -10,12 +10,8 @@ import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, sendLowStockAle
 // Create order from cart
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({ error: 'Not authenticated' });
-      return;
-    }
-
-    const { shippingAddress, paymentIntentId } = req.body;
+    const { shippingAddress, paymentIntentId, cartItems, email } = req.body;
+    const isGuest = !req.user;
 
     if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.address ||
         !shippingAddress.city || !shippingAddress.zipCode || !shippingAddress.country) {
@@ -28,18 +24,49 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // Get user's cart
-    const cart = await Cart.findOne({ userId: req.user._id }).populate('items.productId');
-    if (!cart || cart.items.length === 0) {
-      res.status(400).json({ error: 'Cart is empty' });
+    // For guest checkout, email is required
+    if (isGuest && !email) {
+      res.status(400).json({ error: 'Email is required for guest checkout' });
       return;
+    }
+
+    // Validate email format for guests
+    if (isGuest && email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        res.status(400).json({ error: 'Invalid email format' });
+        return;
+      }
+    }
+
+    let itemsToProcess: any[] = [];
+
+    if (isGuest) {
+      // Guest checkout - use cart items from request body
+      if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+        res.status(400).json({ error: 'Cart is empty' });
+        return;
+      }
+      itemsToProcess = cartItems;
+    } else {
+      // Authenticated user - get cart from database
+      const cart = await Cart.findOne({ userId: req.user!._id }).populate('items.productId');
+      if (!cart || cart.items.length === 0) {
+        res.status(400).json({ error: 'Cart is empty' });
+        return;
+      }
+      itemsToProcess = cart.items;
     }
 
     // Validate products and calculate total
     const orderItems = [];
     let totalAmount = 0;
 
-    for (const cartItem of cart.items) {
+    for (const cartItem of itemsToProcess) {
+      // For guest, productId might be a string or object with id
+      const productId = isGuest 
+        ? (typeof cartItem.productId === 'object' ? cartItem.productId.id : cartItem.productId)
+        : cartItem.productId;
       const product = await Product.findById(cartItem.productId);
       
       if (!product) {
@@ -112,10 +139,18 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // Verify payment intent belongs to user
-    if (paymentIntent.metadata.userId !== req.user._id.toString()) {
-      res.status(403).json({ error: 'Payment intent does not belong to this user' });
-      return;
+    // Verify payment intent belongs to user (if authenticated) or is a guest payment
+    if (req.user) {
+      if (paymentIntent.metadata.userId !== req.user._id.toString()) {
+        res.status(403).json({ error: 'Payment intent does not belong to this user' });
+        return;
+      }
+    } else {
+      // For guests, verify it's a guest payment intent
+      if (paymentIntent.metadata.isGuest !== 'true') {
+        res.status(403).json({ error: 'Payment intent does not belong to this guest session' });
+        return;
+      }
     }
 
     // Verify payment status
@@ -196,8 +231,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // Create order with payment information
-    const order = await Order.create({
-      userId: req.user._id,
+    const orderData: any = {
       items: orderItems,
       totalAmount: finalAmount,
       shippingAddress,
@@ -205,17 +239,34 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       paymentIntentId: paymentIntent.id,
       paymentStatus: 'succeeded',
       paymentMethod: paymentIntent.payment_method ? 'card' : 'unknown'
-    });
+    };
 
-    // Clear cart after order creation
-    cart.items = [];
-    await cart.save();
+    if (req.user) {
+      orderData.userId = req.user._id;
+    } else {
+      orderData.guestEmail = email;
+    }
+
+    const order = await Order.create(orderData);
+
+    // Clear cart after order creation (only for authenticated users)
+    if (req.user) {
+      const cart = await Cart.findOne({ userId: req.user._id });
+      if (cart) {
+        cart.items = [];
+        await cart.save();
+      }
+    }
 
     // Send order confirmation email (async, don't wait for it)
     try {
-      const user = await User.findById(req.user._id);
-      if (user) {
-        sendOrderConfirmationEmail(user.email, user.fullName || 'Customer', order).catch(
+      const recipientEmail = req.user ? (await User.findById(req.user._id))?.email : email;
+      const recipientName = req.user 
+        ? (await User.findById(req.user._id))?.fullName || 'Customer'
+        : shippingAddress.fullName || 'Customer';
+      
+      if (recipientEmail) {
+        sendOrderConfirmationEmail(recipientEmail, recipientName, order).catch(
           (error) => console.error('Failed to send order confirmation email:', error)
         );
       }
@@ -281,11 +332,6 @@ export const getUserOrders = async (req: AuthRequest, res: Response): Promise<vo
 // Get order details
 export const getOrderById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({ error: 'Not authenticated' });
-      return;
-    }
-
     const { id } = req.params;
 
     const order = await Order.findById(id).populate('items.productId');
@@ -294,15 +340,32 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
+    // Check if this is a guest order
+    const isGuestOrder = !order.userId && order.guestEmail;
+
+    // For guest orders, allow access without authentication (anyone with order ID can view)
+    // For authenticated orders, check permissions
+    if (!isGuestOrder && !req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
     // Check if user owns the order, is admin, or is a seller with products in this order
-    const isOwner = req.user._id.toString() === order.userId.toString();
-    const isAdmin = req.user.role === 'admin';
+    let isOwner = false;
+    let isAdmin = false;
+    
+    if (req.user) {
+      if (order.userId) {
+        isOwner = req.user._id.toString() === order.userId.toString();
+      }
+      isAdmin = req.user.role === 'admin';
+    }
     
     // Check if user is a seller and has products in this order
     let isSeller = false;
     let sellerProductIds: string[] = [];
     
-    if (!isOwner && !isAdmin && req.user.role === 'seller') {
+    if (req.user && !isOwner && !isAdmin && req.user.role === 'seller') {
       // Get product IDs from order items (handle both ObjectId and populated object)
       const productIds = order.items.map(item => {
         const productId = item.productId as any;
@@ -321,7 +384,8 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
       isSeller = sellerProductIds.length > 0;
     }
     
-    if (!isOwner && !isAdmin && !isSeller) {
+    // Allow access if: guest order, owner, admin, or seller with products
+    if (!isGuestOrder && !isOwner && !isAdmin && !isSeller) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -348,6 +412,7 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
       order: {
         id: order._id,
         userId: order.userId,
+        guestEmail: order.guestEmail,
         items: orderItems,
         totalAmount: orderTotal,
         shippingAddress: order.shippingAddress,
@@ -395,6 +460,7 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
         return {
           id: order._id,
           userId: order.userId,
+          guestEmail: order.guestEmail,
           user: user ? {
             id: user._id || user.id,
             email: user.email,
@@ -444,7 +510,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
 
     // Check permissions
     const isAdmin = req.user.role === 'admin';
-    const isOwner = order.userId.toString() === req.user!._id.toString();
+    const isOwner = order.userId ? order.userId.toString() === req.user!._id.toString() : false;
     let isSeller = false;
 
     if (!isAdmin && !isOwner) {
@@ -649,6 +715,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       orders: orders.map(order => ({
         id: order._id,
         userId: order.userId,
+        guestEmail: order.guestEmail,
         items: order.items,
         totalAmount: order.totalAmount,
         shippingAddress: order.shippingAddress,
