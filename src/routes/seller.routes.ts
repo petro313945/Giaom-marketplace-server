@@ -6,7 +6,9 @@ import {
   getPendingSellers,
   getAllSellers,
   approveSeller,
-  rejectSeller
+  rejectSeller,
+  updateSellerProfileAdmin,
+  deleteSeller
 } from '../controllers/seller.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -27,5 +29,7 @@ router.get('/pending', requireRole('admin'), getPendingSellers);
 router.get('/', requireRole('admin'), getAllSellers);
 router.put('/:id/approve', validateId, requireRole('admin'), approveSeller);
 router.put('/:id/reject', validateId, requireRole('admin'), rejectSeller);
+router.put('/:id', validateId, requireRole('admin'), updateSellerProfileAdmin);
+router.delete('/:id', validateId, requireRole('admin'), deleteSeller);
 
 export default router;

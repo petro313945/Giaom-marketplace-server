@@ -378,6 +378,7 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
     // Get all orders
     const allOrders = await Order.find()
       .populate('items.productId')
+      .populate('userId', 'email fullName')
       .sort({ createdAt: -1 });
 
     // Filter orders that contain products from this seller
@@ -389,21 +390,29 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
     });
 
     res.json({
-      orders: sellerOrders.map(order => ({
-        id: order._id,
-        userId: order.userId,
-        items: order.items.filter(item => {
-          const product = item.productId as any;
-          return product && product.sellerId && product.sellerId.toString() === req.user!._id.toString();
-        }),
-        totalAmount: order.totalAmount,
-        shippingAddress: order.shippingAddress,
-        status: order.status,
-        trackingNumber: order.trackingNumber,
-        carrier: order.carrier,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
-      })),
+      orders: sellerOrders.map(order => {
+        const user = order.userId as any;
+        return {
+          id: order._id,
+          userId: order.userId,
+          user: user ? {
+            id: user._id || user.id,
+            email: user.email,
+            fullName: user.fullName
+          } : null,
+          items: order.items.filter(item => {
+            const product = item.productId as any;
+            return product && product.sellerId && product.sellerId.toString() === req.user!._id.toString();
+          }),
+          totalAmount: order.totalAmount,
+          shippingAddress: order.shippingAddress,
+          status: order.status,
+          trackingNumber: order.trackingNumber,
+          carrier: order.carrier,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt
+        };
+      }),
       count: sellerOrders.length
     });
   } catch (error: any) {

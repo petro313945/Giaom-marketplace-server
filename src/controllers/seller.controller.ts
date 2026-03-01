@@ -243,3 +243,131 @@ export const rejectSeller = async (req: AuthRequest, res: Response): Promise<voi
     res.status(500).json({ error: error.message || 'Failed to reject seller' });
   }
 };
+
+// Update seller profile (admin only - by seller ID)
+export const updateSellerProfileAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { businessName, businessDescription, status, userId } = req.body;
+
+    const sellerProfile = await SellerProfile.findById(id);
+    if (!sellerProfile) {
+      res.status(404).json({ error: 'Seller profile not found' });
+      return;
+    }
+
+    // Update userId if provided
+    if (userId !== undefined) {
+      const newUser = await User.findById(userId);
+      if (!newUser) {
+        res.status(400).json({ error: 'Invalid user ID' });
+        return;
+      }
+      
+      // If changing owner, update roles
+      const oldUser = await User.findById(sellerProfile.userId);
+      if (oldUser && oldUser._id.toString() !== userId) {
+        // Remove seller role from old user if they have no other seller profiles
+        const otherSellerProfiles = await SellerProfile.find({ userId: oldUser._id, _id: { $ne: id } });
+        if (otherSellerProfiles.length === 0 && oldUser.role === 'seller') {
+          oldUser.role = 'customer';
+          await oldUser.save();
+        }
+        
+        // Add seller role to new user if needed
+        if (newUser.role === 'customer' && status === 'approved') {
+          newUser.role = 'seller';
+          await newUser.save();
+        }
+      }
+      
+      sellerProfile.userId = userId;
+    }
+
+    // Update fields
+    if (businessName !== undefined) {
+      sellerProfile.businessName = businessName;
+    }
+    if (businessDescription !== undefined) {
+      sellerProfile.businessDescription = businessDescription;
+    }
+    if (status !== undefined && ['pending', 'approved', 'rejected'].includes(status)) {
+      sellerProfile.status = status;
+      
+      // Update user role based on status
+      const user = await User.findById(sellerProfile.userId);
+      if (user) {
+        if (status === 'approved' && user.role === 'customer') {
+          user.role = 'seller';
+          await user.save();
+        } else if (status === 'rejected' && user.role === 'seller') {
+          // Check if user has other approved seller profiles
+          const otherSellerProfiles = await SellerProfile.find({ 
+            userId: user._id, 
+            _id: { $ne: id },
+            status: 'approved'
+          });
+          if (otherSellerProfiles.length === 0) {
+            user.role = 'customer';
+            await user.save();
+          }
+        }
+      }
+    }
+
+    await sellerProfile.save();
+
+    const updatedProfile = await SellerProfile.findById(id)
+      .populate('userId', 'email fullName role');
+
+    res.json({
+      message: 'Seller profile updated successfully',
+      sellerProfile: {
+        id: updatedProfile!._id,
+        userId: updatedProfile!.userId,
+        businessName: updatedProfile!.businessName,
+        businessDescription: updatedProfile!.businessDescription,
+        status: updatedProfile!.status,
+        updatedAt: updatedProfile!.updatedAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid seller ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to update seller profile' });
+  }
+};
+
+// Delete seller profile (admin only)
+export const deleteSeller = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const sellerProfile = await SellerProfile.findById(id);
+    if (!sellerProfile) {
+      res.status(404).json({ error: 'Seller profile not found' });
+      return;
+    }
+
+    // Get the user ID before deleting the seller profile
+    const userId = sellerProfile.userId;
+
+    // Delete seller profile
+    await SellerProfile.findByIdAndDelete(id);
+
+    // Delete the seller owner (user account)
+    await User.findByIdAndDelete(userId);
+
+    res.json({
+      message: 'Seller profile and owner account deleted successfully'
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid seller ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to delete seller' });
+  }
+};

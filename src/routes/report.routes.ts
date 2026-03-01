@@ -5,7 +5,8 @@ import {
   getReport,
   getPendingReportsCount,
   resolveReport,
-  dismissReport
+  dismissReport,
+  updateReportStatus
 } from '../controllers/report.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -25,5 +26,6 @@ router.get('/admin', requireRole('admin'), getAllReports);
 router.get('/admin/:id', requireRole('admin'), validateId, getReport);
 router.put('/admin/:id/resolve', requireRole('admin'), validateId, resolveReport);
 router.put('/admin/:id/dismiss', requireRole('admin'), validateId, dismissReport);
+router.put('/admin/:id/status', requireRole('admin'), validateId, updateReportStatus);
 
 export default router;

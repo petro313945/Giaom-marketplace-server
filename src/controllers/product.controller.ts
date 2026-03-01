@@ -500,9 +500,19 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
     const skip = (page - 1) * limit;
 
+    // Handle sorting
+    const sortBy = (req.query.sortBy as string) || 'createdAt';
+    const sortOrder = (req.query.sortOrder as string) === 'asc' ? 1 : -1;
+    
+    // Validate sortBy field
+    const allowedSortFields = ['createdAt', 'updatedAt', 'title', 'price', 'category', 'status', 'stockQuantity'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    
+    const sortOptions: any = { [sortField]: sortOrder };
+
     const [products, total] = await Promise.all([
       Product.find({ sellerId: req.user._id })
-        .sort({ createdAt: -1 })
+        .sort(sortOptions)
         .skip(skip)
         .limit(limit),
       Product.countDocuments({ sellerId: req.user._id })

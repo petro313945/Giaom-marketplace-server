@@ -408,3 +408,70 @@ export const dismissReport = async (req: AuthRequest, res: Response): Promise<vo
     res.status(500).json({ error: error.message || 'Failed to dismiss report' });
   }
 };
+
+// Update report status (admin only) - allows changing to any status including pending
+export const updateReportStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { status, adminNotes } = req.body;
+
+    if (!status || !['pending', 'resolved', 'dismissed'].includes(status)) {
+      res.status(400).json({ error: 'Valid status is required' });
+      return;
+    }
+
+    const report = await Report.findById(id);
+    if (!report) {
+      res.status(404).json({ error: 'Report not found' });
+      return;
+    }
+
+    const previousStatus = report.status;
+    report.status = status;
+
+    // Update resolvedBy and resolvedAt if changing to resolved or dismissed
+    if (status === 'resolved' || status === 'dismissed') {
+      report.resolvedBy = req.user._id;
+      report.resolvedAt = new Date();
+    } else if (status === 'pending') {
+      // Clear resolvedBy and resolvedAt when changing back to pending
+      report.resolvedBy = undefined;
+      report.resolvedAt = undefined;
+    }
+
+    // Update admin notes if provided
+    if (adminNotes !== undefined) {
+      report.adminNotes = adminNotes.trim() || undefined;
+    }
+
+    await report.save();
+    await report.populate('reporterId', 'email fullName');
+    if (report.resolvedBy) {
+      await report.populate('resolvedBy', 'email fullName');
+    }
+
+    res.json({
+      message: `Report status updated to ${status}`,
+      report: {
+        id: report._id,
+        status: report.status,
+        adminNotes: report.adminNotes,
+        resolvedBy: report.resolvedBy,
+        resolvedAt: report.resolvedAt,
+        previousStatus,
+        updatedAt: report.updatedAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid report ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to update report status' });
+  }
+};

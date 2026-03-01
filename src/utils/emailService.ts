@@ -1,6 +1,12 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import { IOrder } from '../models/Order';
 
+// Helper function to normalize CLIENT_URL (remove trailing slashes)
+const getClientUrl = (): string => {
+  const url = process.env.CLIENT_URL || 'http://localhost:3000';
+  return url.replace(/\/+$/, ''); // Remove trailing slashes
+};
+
 // Email configuration interface
 interface EmailConfig {
   host?: string;
@@ -396,7 +402,7 @@ export const sendPasswordResetEmail = async (
   userName: string,
   resetToken: string
 ): Promise<void> => {
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const clientUrl = getClientUrl();
   const resetLink = `${clientUrl}/reset-password?token=${resetToken}`;
   const expiresIn = '1 hour';
 
