@@ -21,6 +21,7 @@ export interface IProduct extends Document {
   category: string;
   imageUrl?: string; // Keep for backward compatibility
   imageUrls?: string[]; // New: array of image URLs
+  colorImages?: { [color: string]: string[] }; // Images per color (e.g., { "Red": ["url1", "url2"], "Blue": ["url3", "url4"] })
   stockQuantity: number;
   variants?: IProductVariant[]; // Product variants (size, color, price, stock)
   bulkDiscountTiers?: IBulkDiscountTier[]; // Bulk discount tiers (e.g., [{minQuantity: 6, discountPercent: 10}])
@@ -62,6 +63,10 @@ const ProductSchema: Schema = new Schema(
     imageUrls: {
       type: [String],
       default: []
+    },
+    colorImages: {
+      type: Schema.Types.Mixed,
+      default: {}
     },
     stockQuantity: {
       type: Number,

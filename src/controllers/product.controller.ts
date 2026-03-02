@@ -347,6 +347,19 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       finalImageUrls = [imageUrl];
     }
 
+    // Handle colorImages: validate and clean the colorImages object
+    let finalColorImages: { [color: string]: string[] } = {};
+    if (colorImages && typeof colorImages === 'object' && !Array.isArray(colorImages)) {
+      Object.keys(colorImages).forEach(color => {
+        if (color && color.trim() && Array.isArray(colorImages[color])) {
+          const cleanedUrls = colorImages[color].filter((url: string) => url && url.trim() !== '');
+          if (cleanedUrls.length > 0) {
+            finalColorImages[color.trim()] = cleanedUrls;
+          }
+        }
+      });
+    }
+
     // Determine final stock quantity: if variants exist, use 0 for base stock; otherwise use provided stockQuantity
     const finalStockQuantity = hasVariants ? 0 : (stockQuantity !== undefined ? Number(stockQuantity) : 0);
     
@@ -358,6 +371,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       category,
       imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '', // Keep first image for backward compatibility
       imageUrls: finalImageUrls,
+      colorImages: Object.keys(finalColorImages).length > 0 ? finalColorImages : undefined,
       stockQuantity: finalStockQuantity,
       variants: variants && Array.isArray(variants) && variants.length > 0 ? variants.map((v: any) => ({
         size: v.size || undefined,
@@ -386,6 +400,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls,
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         bulkDiscountTiers: product.bulkDiscountTiers || [],
@@ -407,7 +422,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const { id } = req.params;
-    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants, bulkDiscountTiers } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, colorImages, stockQuantity, variants, bulkDiscountTiers } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -533,6 +548,27 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
       product.imageUrls = imageUrl ? [imageUrl] : [];
     }
 
+    // Handle colorImages: validate and clean the colorImages object
+    if (colorImages !== undefined) {
+      if (colorImages === null || (typeof colorImages === 'object' && !Array.isArray(colorImages))) {
+        let finalColorImages: { [color: string]: string[] } = {};
+        if (colorImages && typeof colorImages === 'object') {
+          Object.keys(colorImages).forEach(color => {
+            if (color && color.trim() && Array.isArray(colorImages[color])) {
+              const cleanedUrls = colorImages[color].filter((url: string) => url && url.trim() !== '');
+              if (cleanedUrls.length > 0) {
+                finalColorImages[color.trim()] = cleanedUrls;
+              }
+            }
+          });
+        }
+        product.colorImages = Object.keys(finalColorImages).length > 0 ? finalColorImages : {};
+      } else {
+        res.status(400).json({ error: 'colorImages must be an object mapping colors to image arrays' });
+        return;
+      }
+    }
+
     // If updated by seller (not admin), reset status to pending
     if (isOwner && !isAdmin && product.status === 'approved') {
       product.status = 'pending';
@@ -551,6 +587,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         bulkDiscountTiers: product.bulkDiscountTiers || [],
