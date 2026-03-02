@@ -64,7 +64,7 @@ export const validateCreateProduct = [
     .trim()
     .isLength({ min: 10, max: 2000 })
     .withMessage('Product description must be between 10 and 2000 characters')
-    .optional(),
+    .optional({ nullable: true, checkFalsy: true }),
   body('price')
     .isFloat({ min: 0.01 })
     .withMessage('Price must be a positive number greater than 0'),
@@ -75,7 +75,31 @@ export const validateCreateProduct = [
   body('imageUrl')
     .isURL()
     .withMessage('Image URL must be a valid URL')
-    .optional(),
+    .optional({ nullable: true, checkFalsy: true }),
+  body('imageUrls')
+    .isArray()
+    .withMessage('Image URLs must be an array')
+    .optional({ nullable: true, checkFalsy: true }),
+  body('imageUrls.*')
+    .isString()
+    .trim()
+    .optional({ nullable: true, checkFalsy: true }),
+  body('colorImages')
+    .isObject()
+    .withMessage('Color images must be an object')
+    .optional({ nullable: true, checkFalsy: true }),
+  body('stockQuantity')
+    .isInt({ min: 0 })
+    .withMessage('Stock quantity must be a non-negative integer')
+    .optional({ nullable: true, checkFalsy: true }),
+  body('variants')
+    .isArray()
+    .withMessage('Variants must be an array')
+    .optional({ nullable: true, checkFalsy: true }),
+  body('bulkDiscountTiers')
+    .isArray()
+    .withMessage('Bulk discount tiers must be an array')
+    .optional({ nullable: true, checkFalsy: true }),
   handleValidationErrors
 ];
 

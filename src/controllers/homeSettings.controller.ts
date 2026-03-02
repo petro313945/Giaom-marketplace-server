@@ -55,6 +55,7 @@ export const getHomeSettings = async (req: AuthRequest, res: Response): Promise<
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         status: product.status,
@@ -120,6 +121,8 @@ export const getHomeSettingsAdmin = async (req: AuthRequest, res: Response): Pro
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
+        variants: product.variants || [],
         status: product.status
       }))
     });

@@ -104,6 +104,7 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
           category: product.category,
           imageUrl: product.imageUrl,
           imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+          colorImages: product.colorImages || {},
           stockQuantity: product.stockQuantity,
           variants: product.variants || [],
           bulkDiscountTiers: product.bulkDiscountTiers || [],
@@ -188,6 +189,7 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         bulkDiscountTiers: product.bulkDiscountTiers || [],
@@ -264,7 +266,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants, bulkDiscountTiers } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, colorImages, stockQuantity, variants, bulkDiscountTiers } = req.body;
 
     if (!title || !price || !category) {
       res.status(400).json({ error: 'Title, price, and category are required' });
@@ -682,6 +684,7 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         bulkDiscountTiers: product.bulkDiscountTiers || [],
@@ -787,6 +790,7 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
         category: product.category,
         imageUrl: product.imageUrl,
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+        colorImages: product.colorImages || {},
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
         bulkDiscountTiers: product.bulkDiscountTiers || [],
