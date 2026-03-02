@@ -27,6 +27,7 @@ import reportRoutes from './routes/report.routes';
 import paymentRoutes from './routes/payment.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import payoutRoutes from './routes/payout.routes';
+import homeSettingsRoutes from './routes/homeSettings.routes';
 
 const app: Express = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -101,6 +102,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payouts', payoutRoutes);
+app.use('/api/home-settings', homeSettingsRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

@@ -6,6 +6,7 @@ import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { getStripe } from '../config/stripe';
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, sendLowStockAlertEmail } from '../utils/emailService';
+import { calculateBulkDiscountPrice } from '../utils/bulkDiscount';
 
 // Create order from cart
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -81,7 +82,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
 
       // Check stock availability - use variant stock if variant is provided
       let availableStock: number;
-      let itemPrice: number;
+      let basePrice: number;
       
       if (cartItem.variant && (cartItem.variant.size || cartItem.variant.color)) {
         // Find matching variant
@@ -97,10 +98,10 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
         }
 
         availableStock = matchingVariant.stock;
-        itemPrice = matchingVariant.price !== undefined ? matchingVariant.price : product.price;
+        basePrice = matchingVariant.price !== undefined ? matchingVariant.price : product.price;
       } else {
         availableStock = product.stockQuantity;
-        itemPrice = product.price;
+        basePrice = product.price;
       }
 
       if (availableStock < cartItem.quantity) {
@@ -110,6 +111,8 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
         return;
       }
 
+      // Apply bulk discount if available
+      const itemPrice = calculateBulkDiscountPrice(basePrice, cartItem.quantity, product.bulkDiscountTiers);
       const itemTotal = itemPrice * cartItem.quantity;
       totalAmount += itemTotal;
 

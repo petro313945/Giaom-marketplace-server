@@ -12,6 +12,7 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
       search,
       minPrice,
       maxPrice,
+      sellerId,
       page = '1',
       limit = '20',
       sortBy = 'createdAt',
@@ -23,6 +24,10 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
 
     if (category) {
       query.category = category;
+    }
+
+    if (sellerId) {
+      query.sellerId = sellerId;
     }
 
     if (search) {
@@ -66,22 +71,47 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
 
     const total = await Product.countDocuments(query);
 
+    // If filtering by sellerId, fetch businessName once for all products
+    let sellerBusinessName: string | null = null;
+    if (sellerId) {
+      try {
+        const sellerProfile = await SellerProfile.findOne({ userId: sellerId });
+        if (sellerProfile) {
+          sellerBusinessName = sellerProfile.businessName;
+        }
+      } catch (error) {
+        console.error('Error fetching seller profile:', error);
+      }
+    }
+
     res.json({
-      products: products.map(product => ({
-        id: product._id,
-        sellerId: product.sellerId,
-        title: product.title,
-        description: product.description,
-        price: product.price,
-        category: product.category,
-        imageUrl: product.imageUrl,
-        imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
-        stockQuantity: product.stockQuantity,
-        variants: product.variants || [],
-        status: product.status,
-        createdAt: product.createdAt,
-        updatedAt: product.updatedAt
-      })),
+      products: products.map(product => {
+        // Prepare sellerId object with businessName if available
+        let sellerIdResponse = product.sellerId;
+        if (typeof product.sellerId === 'object' && product.sellerId !== null && sellerBusinessName) {
+          sellerIdResponse = {
+            ...(product.sellerId as any).toObject ? (product.sellerId as any).toObject() : product.sellerId,
+            businessName: sellerBusinessName
+          };
+        }
+        
+        return {
+          id: product._id,
+          sellerId: sellerIdResponse,
+          title: product.title,
+          description: product.description,
+          price: product.price,
+          category: product.category,
+          imageUrl: product.imageUrl,
+          imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
+          stockQuantity: product.stockQuantity,
+          variants: product.variants || [],
+          bulkDiscountTiers: product.bulkDiscountTiers || [],
+          status: product.status,
+          createdAt: product.createdAt,
+          updatedAt: product.updatedAt
+        };
+      }),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -160,6 +190,7 @@ export const getProductById = async (req: AuthRequest, res: Response): Promise<v
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -233,7 +264,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants, bulkDiscountTiers } = req.body;
 
     if (!title || !price || !category) {
       res.status(400).json({ error: 'Title, price, and category are required' });
@@ -288,6 +319,26 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
       }
     }
 
+    // Validate bulk discount tiers if provided
+    if (bulkDiscountTiers !== undefined) {
+      if (!Array.isArray(bulkDiscountTiers)) {
+        res.status(400).json({ error: 'Bulk discount tiers must be an array' });
+        return;
+      }
+      if (bulkDiscountTiers.length > 0) {
+        for (const tier of bulkDiscountTiers) {
+          if (tier.minQuantity === undefined || isNaN(tier.minQuantity) || tier.minQuantity < 1) {
+            res.status(400).json({ error: 'Each bulk discount tier must have a minimum quantity of at least 1' });
+            return;
+          }
+          if (tier.discountPercent === undefined || isNaN(tier.discountPercent) || tier.discountPercent < 0 || tier.discountPercent > 100) {
+            res.status(400).json({ error: 'Each bulk discount tier must have a discount percent between 0 and 100' });
+            return;
+          }
+        }
+      }
+    }
+
     // Handle multiple images: prefer imageUrls array, fallback to imageUrl
     let finalImageUrls: string[] = [];
     if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
@@ -312,7 +363,14 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
         size: v.size || undefined,
         color: v.color || undefined,
         price: v.price !== undefined ? Number(v.price) : undefined,
-        stock: Number(v.stock)
+        stock: Number(v.stock),
+        imageUrls: v.imageUrls && Array.isArray(v.imageUrls) && v.imageUrls.length > 0 
+          ? v.imageUrls.filter((url: string) => url && url.trim() !== '')
+          : undefined
+      })) : [],
+      bulkDiscountTiers: bulkDiscountTiers && Array.isArray(bulkDiscountTiers) && bulkDiscountTiers.length > 0 ? bulkDiscountTiers.map((t: any) => ({
+        minQuantity: Number(t.minQuantity),
+        discountPercent: Number(t.discountPercent)
       })) : [],
       status: 'pending'
     });
@@ -330,6 +388,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
         imageUrls: product.imageUrls,
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         createdAt: product.createdAt
       }
@@ -348,7 +407,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const { id } = req.params;
-    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants } = req.body;
+    const { title, description, price, category, imageUrl, imageUrls, stockQuantity, variants, bulkDiscountTiers } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -404,7 +463,10 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
           size: v.size || undefined,
           color: v.color || undefined,
           price: v.price !== undefined ? Number(v.price) : undefined,
-          stock: Number(v.stock)
+          stock: Number(v.stock),
+          imageUrls: v.imageUrls && Array.isArray(v.imageUrls) && v.imageUrls.length > 0 
+            ? v.imageUrls.filter((url: string) => url && url.trim() !== '')
+            : undefined
         }));
         // If variants exist, set base stock to 0
         product.stockQuantity = 0;
@@ -427,6 +489,33 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     } else if (hasVariants) {
       // If variants exist but stockQuantity not provided, ensure it's 0
       product.stockQuantity = 0;
+    }
+
+    // Handle bulk discount tiers
+    if (bulkDiscountTiers !== undefined) {
+      if (!Array.isArray(bulkDiscountTiers)) {
+        res.status(400).json({ error: 'Bulk discount tiers must be an array' });
+        return;
+      }
+      if (bulkDiscountTiers.length > 0) {
+        for (const tier of bulkDiscountTiers) {
+          if (tier.minQuantity === undefined || isNaN(tier.minQuantity) || tier.minQuantity < 1) {
+            res.status(400).json({ error: 'Each bulk discount tier must have a minimum quantity of at least 1' });
+            return;
+          }
+          if (tier.discountPercent === undefined || isNaN(tier.discountPercent) || tier.discountPercent < 0 || tier.discountPercent > 100) {
+            res.status(400).json({ error: 'Each bulk discount tier must have a discount percent between 0 and 100' });
+            return;
+          }
+        }
+        product.bulkDiscountTiers = bulkDiscountTiers.map((t: any) => ({
+          minQuantity: Number(t.minQuantity),
+          discountPercent: Number(t.discountPercent)
+        }));
+      } else {
+        // Empty array means remove bulk discount tiers
+        product.bulkDiscountTiers = [];
+      }
     }
     
     // Handle multiple images: prefer imageUrls array, fallback to imageUrl
@@ -464,6 +553,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         updatedAt: product.updatedAt
       }
@@ -557,6 +647,7 @@ export const getSellerProducts = async (req: AuthRequest, res: Response): Promis
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt
@@ -592,6 +683,7 @@ export const getPendingProducts = async (req: AuthRequest, res: Response): Promi
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         createdAt: product.createdAt
       })),
@@ -660,6 +752,7 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
         imageUrls: product.imageUrls && product.imageUrls.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : []),
         stockQuantity: product.stockQuantity,
         variants: product.variants || [],
+        bulkDiscountTiers: product.bulkDiscountTiers || [],
         status: product.status,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt

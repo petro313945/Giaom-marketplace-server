@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Cart from '../models/Cart';
 import Product from '../models/Product';
 import { getStripe } from '../config/stripe';
+import { calculateBulkDiscountPrice } from '../utils/bulkDiscount';
 
 // Create payment intent
 export const createPaymentIntent = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -50,7 +51,7 @@ export const createPaymentIntent = async (req: AuthRequest, res: Response): Prom
       }
 
       // Get item price - use variant price if variant is provided
-      let itemPrice: number;
+      let basePrice: number;
       const variant = isGuest ? cartItem.variant : cartItem.variant;
       
       if (variant && (variant.size || variant.color)) {
@@ -66,12 +67,14 @@ export const createPaymentIntent = async (req: AuthRequest, res: Response): Prom
           return;
         }
 
-        itemPrice = matchingVariant.price !== undefined ? matchingVariant.price : product.price;
+        basePrice = matchingVariant.price !== undefined ? matchingVariant.price : product.price;
       } else {
-        itemPrice = product.price;
+        basePrice = product.price;
       }
 
       const quantity = cartItem.quantity || 1;
+      // Apply bulk discount if available
+      const itemPrice = calculateBulkDiscountPrice(basePrice, quantity, product.bulkDiscountTiers);
       const itemTotal = itemPrice * quantity;
       totalAmount += itemTotal;
     }
