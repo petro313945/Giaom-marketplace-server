@@ -10,6 +10,7 @@ import path from 'path';
 import { connectDatabase } from './config/database';
 import { errorHandler } from './middleware/error.middleware';
 import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimit.middleware';
+import { seedAdmin } from './utils/seedAdmin';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -116,6 +117,9 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDatabase();
+    
+    // Seed admin user on first run
+    await seedAdmin();
     
     // Start server - listen on all interfaces (0.0.0.0) to allow network access
     app.listen(PORT, '0.0.0.0', () => {

@@ -13,9 +13,7 @@
     "pm2:restart": "pm2 restart giaom-server",
     "pm2:delete": "pm2 delete giaom-server",
     "db": "mongod --dbpath ./data/db",
-    "lint": "eslint src/**/*.ts",
-    "seed:categories": "ts-node scripts/seed-categories.ts",
-    "seed:admin": "ts-node scripts/seed-admin.ts"
+    "lint": "eslint src/**/*.ts"
   },
   "keywords": [
     "marketplace",
