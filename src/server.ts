@@ -53,8 +53,8 @@ app.use(cors({
   origin: [
     CLIENT_URL,
     'http://localhost:3000',
-    'http://146.19.170.131:3000',
-    /^http:\/\/146\.19\.170\.131/ // Allow any port on this IP
+    'http://31.97.51.42:3000',
+    /^http:\/\/31\.97\.51\.42/ // Allow any port on this IP
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -120,7 +120,7 @@ const startServer = async () => {
     // Start server - listen on all interfaces (0.0.0.0) to allow network access
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server is running on http://localhost:${PORT}`);
-      console.log(`🚀 Server is also accessible on http://146.19.170.131:${PORT}`);
+      console.log(`🚀 Server is also accessible on http://31.97.51.42:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
