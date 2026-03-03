@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/giaom-marketplace';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://projohn313_db_user:PQRMnrogRGZHyFeC@cluster0.gnbxt6u.mongodb.net/giaom-marketplace';
 
 export const connectDatabase = async (): Promise<void> => {
   try {
