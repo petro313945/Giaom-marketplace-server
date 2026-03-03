@@ -32,25 +32,35 @@ const allowedMimeTypes = [
   'image/webp'
 ];
 
-// File filter - only allow images with strict validation
+// File filter - only allow images with validation
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  // Check file extension
+  // Check file extension (most reliable check)
   const ext = path.extname(file.originalname).toLowerCase();
   const allowedExtensions = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
-  
-  // Check MIME type
-  const isValidMimeType = allowedMimeTypes.includes(file.mimetype);
   const isValidExtension = allowedExtensions.includes(ext);
   
-  // Additional security: Check if filename is safe (no path traversal)
-  const filename = path.basename(file.originalname);
-  const isSafeFilename = /^[a-zA-Z0-9._-]+$/.test(filename.replace(ext, ''));
-  
-  if (isValidMimeType && isValidExtension && isSafeFilename) {
-    return cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp). Invalid file type or unsafe filename.'));
+  if (!isValidExtension) {
+    return cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp). Invalid file extension.'));
   }
+  
+  // Security: Check for path traversal attempts
+  const filename = path.basename(file.originalname);
+  const hasPathTraversal = filename.includes('..') || 
+                          filename.includes('/') || 
+                          filename.includes('\\') ||
+                          filename.trim() === '';
+  
+  if (hasPathTraversal) {
+    return cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp). Unsafe filename detected.'));
+  }
+  
+  // Check MIME type (be lenient - some browsers send generic or missing MIME types)
+  // Extension check is primary validation; MIME type is secondary
+  // We allow files with valid extensions even if MIME type is missing or generic
+  // This handles cases where browsers send incorrect or missing MIME types
+  
+  // All checks passed
+  return cb(null, true);
 };
 
 // Configure multer

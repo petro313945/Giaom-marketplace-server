@@ -4,9 +4,22 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Order from '../models/Order';
 import Product from '../models/Product';
 import Payout from '../models/Payout';
+import MarketplaceSettings from '../models/MarketplaceSettings';
+import Review from '../models/Review';
 
-// Marketplace commission rate (10%)
-const COMMISSION_RATE = 0.10;
+// Helper function to get commission rate from settings
+const getCommissionRate = async (): Promise<number> => {
+  try {
+    let settings = await MarketplaceSettings.findOne();
+    if (!settings) {
+      settings = await MarketplaceSettings.create({ commissionRate: 0.10 }); // Default 10%
+    }
+    return settings.commissionRate;
+  } catch (error) {
+    console.error('Error getting commission rate, using default 10%:', error);
+    return 0.10; // Fallback to 10%
+  }
+};
 
 // Helper function to calculate seller earnings from orders
 const calculateSellerEarnings = async (sellerId: string, orderIds?: string[]) => {
@@ -51,7 +64,8 @@ const calculateSellerEarnings = async (sellerId: string, orderIds?: string[]) =>
     }
   });
 
-  const commission = totalAmount * COMMISSION_RATE;
+  const commissionRate = await getCommissionRate();
+  const commission = totalAmount * commissionRate;
   const netAmount = totalAmount - commission;
 
   return {
@@ -141,7 +155,8 @@ export const getEarningsSummary = async (req: AuthRequest, res: Response): Promi
       }
     });
 
-    const availableCommission = availableAmount * COMMISSION_RATE;
+    const commissionRate = await getCommissionRate();
+    const availableCommission = availableAmount * commissionRate;
     const availableNetAmount = availableAmount - availableCommission;
 
     res.json({
@@ -189,25 +204,119 @@ export const getPayoutHistory = async (req: AuthRequest, res: Response): Promise
       .sort({ createdAt: -1 })
       .limit(limitNum)
       .skip((pageNum - 1) * limitNum)
-      .populate('orderIds', 'totalAmount status createdAt');
+      .populate({
+        path: 'orderIds',
+        select: 'totalAmount status createdAt items',
+        populate: {
+          path: 'items.productId',
+          select: 'title imageUrl imageUrls sellerId'
+        }
+      });
 
     const total = await Payout.countDocuments({ sellerId: req.user._id });
 
+    // Process each payout to include order details and calculate average rating
+    const processedPayouts = await Promise.all(
+      payouts.map(async (payout) => {
+        const sellerId = req.user!._id.toString();
+        
+        // Process already populated orders
+        const orderDetails = await Promise.all(
+          payout.orderIds.map(async (order: any) => {
+            // Handle both populated and non-populated orderIds
+            const orderData = order._id ? order : await Order.findById(order).populate('items.productId');
+            if (!orderData) return null;
+
+            // Filter items that belong to this seller
+            const sellerItems = orderData.items.filter((item: any) => {
+              const product = item.productId as any;
+              return product && product.sellerId && product.sellerId.toString() === sellerId;
+            });
+
+            if (sellerItems.length === 0) return null;
+
+            const sellerRevenue = sellerItems.reduce((sum: number, item: any) => {
+              return sum + (item.price * item.quantity);
+            }, 0);
+
+            // Get product IDs for rating calculation
+            const productIds = sellerItems.map((item: any) => {
+              const product = item.productId as any;
+              return product._id ? product._id.toString() : product.toString();
+            });
+
+            // Calculate average rating for products in this order
+            const reviews = await Review.find({
+              productId: { $in: productIds },
+              status: 'approved'
+            });
+
+            let averageRating = null;
+            if (reviews.length > 0) {
+              const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
+              averageRating = totalRating / reviews.length;
+            }
+
+            return {
+              id: orderData._id.toString(),
+              orderNumber: orderData._id.toString().slice(-8),
+              createdAt: orderData.createdAt,
+              status: orderData.status,
+              items: sellerItems.map((item: any) => {
+                const product = item.productId as any;
+                return {
+                  productId: product._id ? product._id.toString() : product.toString(),
+                  title: item.title || product?.title || 'Unknown Product',
+                  imageUrl: product?.imageUrl || product?.imageUrls?.[0],
+                  quantity: item.quantity,
+                  price: item.price,
+                  subtotal: item.price * item.quantity
+                };
+              }),
+              sellerRevenue,
+              averageRating
+            };
+          })
+        );
+
+        // Filter out null orders
+        const validOrders = orderDetails.filter((order): order is NonNullable<typeof order> => order !== null);
+
+        // Calculate overall average rating for all orders in this payout
+        const allRatings = validOrders
+          .map(order => order.averageRating)
+          .filter((rating): rating is number => rating !== null);
+        
+        let overallAverageRating = null;
+        if (allRatings.length > 0) {
+          overallAverageRating = allRatings.reduce((sum, rating) => sum + rating, 0) / allRatings.length;
+        }
+
+        // Calculate commission rate (commission / amount)
+        const commissionRate = payout.amount > 0 ? payout.commission / payout.amount : 0;
+
+        return {
+          id: payout._id,
+          amount: payout.amount,
+          commission: payout.commission,
+          netAmount: payout.netAmount,
+          commissionRate: commissionRate,
+          status: payout.status,
+          payoutMethod: payout.payoutMethod,
+          requestedAt: payout.requestedAt,
+          processedAt: payout.processedAt,
+          failureReason: payout.failureReason,
+          orderCount: payout.orderIds.length,
+          orders: validOrders,
+          averageRating: overallAverageRating,
+          createdAt: payout.createdAt,
+          updatedAt: payout.updatedAt
+        };
+      })
+    );
+
     res.json({
-      payouts: payouts.map(payout => ({
-        id: payout._id,
-        amount: payout.amount,
-        commission: payout.commission,
-        netAmount: payout.netAmount,
-        status: payout.status,
-        payoutMethod: payout.payoutMethod,
-        requestedAt: payout.requestedAt,
-        processedAt: payout.processedAt,
-        failureReason: payout.failureReason,
-        orderCount: payout.orderIds.length,
-        createdAt: payout.createdAt,
-        updatedAt: payout.updatedAt
-      })),
+      payouts: processedPayouts,
       pagination: {
         page: pageNum,
         limit: limitNum,

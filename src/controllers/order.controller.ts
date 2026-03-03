@@ -3,6 +3,7 @@ import Order from '../models/Order';
 import Cart from '../models/Cart';
 import Product from '../models/Product';
 import User from '../models/User';
+import RefundRequest from '../models/RefundRequest';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { getStripe } from '../config/stripe';
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, sendLowStockAlertEmail } from '../utils/emailService';
@@ -312,19 +313,37 @@ export const getUserOrders = async (req: AuthRequest, res: Response): Promise<vo
       .populate('items.productId')
       .sort({ createdAt: -1 });
 
+    // Get refund requests for all orders
+    const orderIds = orders.map(order => order._id);
+    const refundRequests = await RefundRequest.find({ orderId: { $in: orderIds } });
+
     res.json({
-      orders: orders.map(order => ({
-        id: order._id,
-        userId: order.userId,
-        items: order.items,
-        totalAmount: order.totalAmount,
-        shippingAddress: order.shippingAddress,
-        status: order.status,
-        trackingNumber: order.trackingNumber,
-        carrier: order.carrier,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
-      })),
+      orders: orders.map(order => {
+        const refundRequest = refundRequests.find(
+          req => req.orderId.toString() === order._id.toString()
+        );
+        return {
+          id: order._id,
+          userId: order.userId,
+          items: order.items,
+          totalAmount: order.totalAmount,
+          shippingAddress: order.shippingAddress,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          trackingNumber: order.trackingNumber,
+          carrier: order.carrier,
+          refundRequest: refundRequest ? {
+            id: refundRequest._id,
+            status: refundRequest.status,
+            refundAmount: refundRequest.refundAmount,
+            reason: refundRequest.reason,
+            createdAt: refundRequest.createdAt,
+            processedAt: refundRequest.processedAt
+          } : null,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt
+        };
+      }),
       count: orders.length
     });
   } catch (error: any) {
@@ -407,9 +426,14 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
         return sellerProductIds.includes(productIdStr);
       });
       
-      // Calculate total for seller's items only
-      orderTotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      // Calculate total for seller's items only (subtotal + tax)
+      const sellerSubtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const sellerTax = sellerSubtotal * 0.08; // 8% tax
+      orderTotal = sellerSubtotal + sellerTax;
     }
+
+    // Get refund request for this order
+    const refundRequest = await RefundRequest.findOne({ orderId: order._id });
 
     res.json({
       order: {
@@ -420,8 +444,17 @@ export const getOrderById = async (req: AuthRequest, res: Response): Promise<voi
         totalAmount: orderTotal,
         shippingAddress: order.shippingAddress,
         status: order.status,
+        paymentStatus: order.paymentStatus,
         trackingNumber: order.trackingNumber,
         carrier: order.carrier,
+        refundRequest: refundRequest ? {
+          id: refundRequest._id,
+          status: refundRequest.status,
+          refundAmount: refundRequest.refundAmount,
+          reason: refundRequest.reason,
+          createdAt: refundRequest.createdAt,
+          processedAt: refundRequest.processedAt
+        } : null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt
       }
@@ -457,9 +490,32 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
       });
     });
 
+    // Get refund requests for all seller orders
+    const orderIds = sellerOrders.map(order => order._id);
+    const refundRequests = await RefundRequest.find({ orderId: { $in: orderIds } });
+
     res.json({
       orders: sellerOrders.map(order => {
         const user = order.userId as any;
+        const refundRequest = refundRequests.find(
+          req => req.orderId.toString() === order._id.toString()
+        );
+        
+        // Filter items to only include seller's products
+        const sellerItems = order.items.filter(item => {
+          const product = item.productId as any;
+          return product && product.sellerId && product.sellerId.toString() === req.user!._id.toString();
+        });
+        
+        // Calculate seller's portion of the order amount
+        // Sum of seller's items (subtotal)
+        const sellerSubtotal = sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        // Calculate proportional tax (8% of seller's subtotal)
+        // Note: The original order.totalAmount includes tax, so we calculate seller's portion with tax
+        const sellerTax = sellerSubtotal * 0.08;
+        const sellerTotalAmount = sellerSubtotal + sellerTax;
+        
         return {
           id: order._id,
           userId: order.userId,
@@ -469,15 +525,21 @@ export const getSellerOrders = async (req: AuthRequest, res: Response): Promise<
             email: user.email,
             fullName: user.fullName
           } : null,
-          items: order.items.filter(item => {
-            const product = item.productId as any;
-            return product && product.sellerId && product.sellerId.toString() === req.user!._id.toString();
-          }),
-          totalAmount: order.totalAmount,
+          items: sellerItems,
+          totalAmount: sellerTotalAmount,
           shippingAddress: order.shippingAddress,
           status: order.status,
+          paymentStatus: order.paymentStatus,
           trackingNumber: order.trackingNumber,
           carrier: order.carrier,
+          refundRequest: refundRequest ? {
+            id: refundRequest._id,
+            status: refundRequest.status,
+            refundAmount: refundRequest.refundAmount,
+            reason: refundRequest.reason,
+            createdAt: refundRequest.createdAt,
+            processedAt: refundRequest.processedAt
+          } : null,
           createdAt: order.createdAt,
           updatedAt: order.updatedAt
         };
@@ -714,20 +776,38 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
     const pendingOrders = orders.filter(o => o.status === 'pending').length;
     const deliveredOrders = orders.filter(o => o.status === 'delivered').length;
 
+    // Get refund requests for all orders
+    const orderIds = orders.map(order => order._id);
+    const refundRequests = await RefundRequest.find({ orderId: { $in: orderIds } });
+
     res.json({
-      orders: orders.map(order => ({
-        id: order._id,
-        userId: order.userId,
-        guestEmail: order.guestEmail,
-        items: order.items,
-        totalAmount: order.totalAmount,
-        shippingAddress: order.shippingAddress,
-        status: order.status,
-        trackingNumber: order.trackingNumber,
-        carrier: order.carrier,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
-      })),
+      orders: orders.map(order => {
+        const refundRequest = refundRequests.find(
+          req => req.orderId.toString() === order._id.toString()
+        );
+        return {
+          id: order._id,
+          userId: order.userId,
+          guestEmail: order.guestEmail,
+          items: order.items,
+          totalAmount: order.totalAmount,
+          shippingAddress: order.shippingAddress,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          trackingNumber: order.trackingNumber,
+          carrier: order.carrier,
+          refundRequest: refundRequest ? {
+            id: refundRequest._id,
+            status: refundRequest.status,
+            refundAmount: refundRequest.refundAmount,
+            reason: refundRequest.reason,
+            createdAt: refundRequest.createdAt,
+            processedAt: refundRequest.processedAt
+          } : null,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt
+        };
+      }),
       statistics: {
         totalOrders,
         totalRevenue,
@@ -738,5 +818,346 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to get orders' });
+  }
+};
+
+// Request refund (customer)
+export const requestRefund = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const { id: orderId } = req.params;
+    const { reason, description } = req.body;
+
+    if (!reason || !['defective', 'wrong_item', 'not_as_described', 'damaged', 'late_delivery', 'other'].includes(reason)) {
+      res.status(400).json({ error: 'Valid reason is required' });
+      return;
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      res.status(404).json({ error: 'Order not found' });
+      return;
+    }
+
+    // Check if user owns the order (for authenticated users)
+    // For guest orders, we allow refund requests if the user provides the guest email
+    const isOwner = order.userId ? order.userId.toString() === req.user._id.toString() : false;
+    const isGuestOrder = !order.userId && order.guestEmail;
+    
+    // Allow refund if user owns the order OR if it's a guest order (we'll verify via email if needed)
+    if (!isOwner && !isGuestOrder) {
+      res.status(403).json({ error: 'You can only request refunds for your own orders' });
+      return;
+    }
+
+    // Check if order is eligible for refund (delivered or shipped)
+    if (order.status !== 'delivered' && order.status !== 'shipped') {
+      res.status(400).json({ error: 'Refunds can only be requested for delivered or shipped orders' });
+      return;
+    }
+
+    // Check if there's already an active refund request (pending, approved, or processed)
+    // Only allow new requests if previous one was rejected
+    const existingRequest = await RefundRequest.findOne({
+      orderId: order._id,
+      status: { $in: ['pending', 'approved', 'processed'] }
+    });
+
+    if (existingRequest) {
+      res.status(400).json({ error: 'A refund request already exists for this order' });
+      return;
+    }
+
+    // Create refund request
+    const refundRequest = await RefundRequest.create({
+      orderId: order._id,
+      userId: order.userId ? req.user._id : undefined,
+      guestEmail: order.guestEmail || undefined,
+      reason,
+      description: description || undefined,
+      status: 'pending',
+      refundAmount: order.totalAmount
+    });
+
+    res.status(201).json({
+      message: 'Refund request submitted successfully',
+      refundRequest: {
+        id: refundRequest._id,
+        orderId: refundRequest.orderId,
+        reason: refundRequest.reason,
+        description: refundRequest.description,
+        status: refundRequest.status,
+        refundAmount: refundRequest.refundAmount,
+        createdAt: refundRequest.createdAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to request refund' });
+  }
+};
+
+// Get refund requests (customer - their own, admin - all)
+export const getRefundRequests = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const isAdmin = req.user.role === 'admin';
+    let refundRequests;
+
+    if (isAdmin) {
+      // Admin can see all refund requests
+      refundRequests = await RefundRequest.find()
+        .populate('orderId')
+        .populate('userId', 'email fullName')
+        .sort({ createdAt: -1 });
+    } else {
+      // Customers can only see their own refund requests
+      // Include both user-owned and guest email matches
+      refundRequests = await RefundRequest.find({
+        $or: [
+          { userId: req.user._id },
+          { guestEmail: req.user.email?.toLowerCase() }
+        ]
+      })
+        .populate('orderId')
+        .sort({ createdAt: -1 });
+    }
+
+    res.json({
+      refundRequests: refundRequests.map(req => ({
+        id: req._id,
+        orderId: req.orderId,
+        userId: req.userId,
+        guestEmail: req.guestEmail,
+        reason: req.reason,
+        description: req.description,
+        status: req.status,
+        refundAmount: req.refundAmount,
+        adminNotes: req.adminNotes,
+        processedAt: req.processedAt,
+        createdAt: req.createdAt,
+        updatedAt: req.updatedAt
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get refund requests' });
+  }
+};
+
+// Get refund request by ID
+export const getRefundRequestById = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const { id } = req.params;
+    const refundRequest = await RefundRequest.findById(id)
+      .populate('orderId')
+      .populate('userId', 'email fullName');
+
+    if (!refundRequest) {
+      res.status(404).json({ error: 'Refund request not found' });
+      return;
+    }
+
+    // Check permissions
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = refundRequest.userId 
+      ? refundRequest.userId.toString() === req.user._id.toString() 
+      : false;
+    // For guest orders, allow access if user email matches guest email
+    const isGuestOwner = !refundRequest.userId && refundRequest.guestEmail && 
+      req.user.email && req.user.email.toLowerCase() === refundRequest.guestEmail.toLowerCase();
+
+    if (!isAdmin && !isOwner && !isGuestOwner) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    res.json({
+      refundRequest: {
+        id: refundRequest._id,
+        orderId: refundRequest.orderId,
+        userId: refundRequest.userId,
+        guestEmail: refundRequest.guestEmail,
+        reason: refundRequest.reason,
+        description: refundRequest.description,
+        status: refundRequest.status,
+        refundAmount: refundRequest.refundAmount,
+        adminNotes: refundRequest.adminNotes,
+        processedAt: refundRequest.processedAt,
+        createdAt: refundRequest.createdAt,
+        updatedAt: refundRequest.updatedAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid refund request ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to get refund request' });
+  }
+};
+
+// Update refund request status (admin only)
+export const updateRefundRequestStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    if (req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { status, adminNotes } = req.body;
+
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      res.status(400).json({ error: 'Valid status is required' });
+      return;
+    }
+
+    const refundRequest = await RefundRequest.findById(id).populate('orderId');
+    if (!refundRequest) {
+      res.status(404).json({ error: 'Refund request not found' });
+      return;
+    }
+
+    if (refundRequest.status === 'processed') {
+      res.status(400).json({ error: 'This refund request has already been processed' });
+      return;
+    }
+
+    refundRequest.status = status;
+    if (adminNotes !== undefined) {
+      refundRequest.adminNotes = adminNotes;
+    }
+    await refundRequest.save();
+
+    res.json({
+      message: 'Refund request status updated successfully',
+      refundRequest: {
+        id: refundRequest._id,
+        status: refundRequest.status,
+        adminNotes: refundRequest.adminNotes,
+        updatedAt: refundRequest.updatedAt
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid refund request ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to update refund request status' });
+  }
+};
+
+// Process refund (admin only - actually process Stripe refund)
+export const processRefund = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    if (req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const { id } = req.params;
+    const refundRequest = await RefundRequest.findById(id).populate('orderId');
+    
+    if (!refundRequest) {
+      res.status(404).json({ error: 'Refund request not found' });
+      return;
+    }
+
+    if (refundRequest.status !== 'approved') {
+      res.status(400).json({ error: 'Refund request must be approved before processing' });
+      return;
+    }
+
+    if (refundRequest.status === 'processed') {
+      res.status(400).json({ error: 'Refund has already been processed' });
+      return;
+    }
+
+    const order = refundRequest.orderId as any;
+    if (!order || !order.paymentIntentId) {
+      res.status(400).json({ error: 'Order payment information not found' });
+      return;
+    }
+
+    // Process refund through Stripe
+    const stripe = getStripe();
+    const refundAmount = refundRequest.refundAmount || order.totalAmount;
+    
+    try {
+      // Retrieve payment intent to get charge ID
+      const paymentIntent = await stripe.paymentIntents.retrieve(order.paymentIntentId);
+      
+      if (!paymentIntent.latest_charge) {
+        res.status(400).json({ error: 'Payment charge not found' });
+        return;
+      }
+
+      // Create refund
+      const refund = await stripe.refunds.create({
+        charge: paymentIntent.latest_charge as string,
+        amount: Math.round(refundAmount * 100), // Convert to cents
+        reason: 'requested_by_customer'
+      });
+
+      // Update refund request status
+      refundRequest.status = 'processed';
+      refundRequest.processedAt = new Date();
+      await refundRequest.save();
+
+      // Update order payment status
+      order.paymentStatus = 'refunded';
+      await order.save();
+
+      res.json({
+        message: 'Refund processed successfully',
+        refundRequest: {
+          id: refundRequest._id,
+          status: refundRequest.status,
+          processedAt: refundRequest.processedAt
+        },
+        refund: {
+          id: refund.id,
+          amount: refund.amount / 100, // Convert back to dollars
+          status: refund.status
+        }
+      });
+    } catch (stripeError: any) {
+      console.error('Stripe refund error:', stripeError);
+      res.status(500).json({ 
+        error: stripeError.message || 'Failed to process refund through payment provider' 
+      });
+    }
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      res.status(400).json({ error: 'Invalid refund request ID' });
+      return;
+    }
+    res.status(500).json({ error: error.message || 'Failed to process refund' });
   }
 };

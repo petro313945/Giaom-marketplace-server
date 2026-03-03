@@ -1,8 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import bcrypt from 'bcryptjs';
 import Category from '../src/models/Category';
-import User from '../src/models/User';
 
 dotenv.config();
 
@@ -29,21 +27,6 @@ async function seedCategories() {
     // Insert default categories
     const categories = await Category.insertMany(defaultCategories);
     console.log(`✅ Seeded ${categories.length} categories`);
-
-    // Create or update admin user
-    let admin = await User.findOne({ email: 'admin@test.com' });
-    if (!admin) {
-      const hashedPassword = await bcrypt.hash('earn$10K', 10);
-      admin = await User.create({
-        email: 'admin@test.com',
-        password: hashedPassword,
-        fullName: 'Admin User',
-        role: 'admin',
-      });
-      console.log('✅ Created admin user (admin@test.com / earn$10K)');
-    } else {
-      console.log('ℹ️  Admin user already exists');
-    }
 
     process.exit(0);
   } catch (error) {

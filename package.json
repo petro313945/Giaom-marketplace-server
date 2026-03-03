@@ -11,7 +11,7 @@
     "db": "mongod --dbpath ./data/db",
     "lint": "eslint src/**/*.ts",
     "seed:categories": "ts-node scripts/seed-categories.ts",
-    "seed:products": "ts-node scripts/seed-products.ts"
+    "seed:admin": "ts-node scripts/seed-admin.ts"
   },
   "keywords": [
     "marketplace",
@@ -22,7 +22,9 @@
   "license": "MIT",
   "dependencies": {
     "@stripe/stripe-js": "^8.8.0",
+    "@types/archiver": "^7.0.0",
     "@types/nodemailer": "^7.0.11",
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

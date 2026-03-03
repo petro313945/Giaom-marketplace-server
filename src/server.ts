@@ -28,6 +28,8 @@ import paymentRoutes from './routes/payment.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import payoutRoutes from './routes/payout.routes';
 import homeSettingsRoutes from './routes/homeSettings.routes';
+import marketplaceSettingsRoutes from './routes/marketplaceSettings.routes';
+import backupRoutes from './routes/backup.routes';
 
 const app: Express = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -103,6 +105,8 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payouts', payoutRoutes);
 app.use('/api/home-settings', homeSettingsRoutes);
+app.use('/api/marketplace-settings', marketplaceSettingsRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

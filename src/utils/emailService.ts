@@ -492,5 +492,49 @@ export const sendLowStockAlertEmail = async (
   await sendEmail(sellerEmail, `Low Stock Alert: ${productTitle}`, html, text);
 };
 
+// Admin password reset email
+export const sendAdminPasswordResetEmail = async (
+  userEmail: string,
+  userName: string,
+  newPassword: string,
+  adminName?: string
+): Promise<void> => {
+  const clientUrl = getClientUrl();
+  const loginUrl = `${clientUrl}/auth/login`;
+
+  const content = `
+    <h2>Password Reset by Administrator</h2>
+    <p>Hi ${userName || 'there'},</p>
+    <p>Your account password has been reset by an administrator${adminName ? ` (${adminName})` : ''}.</p>
+    <p><strong>Your new temporary password is:</strong></p>
+    <div style="background-color: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; padding: 16px; margin: 20px 0; text-align: center;">
+      <p style="font-size: 20px; font-weight: bold; color: #2563eb; font-family: monospace; letter-spacing: 2px; margin: 0;">${newPassword}</p>
+    </div>
+    <p><strong>Important Security Information:</strong></p>
+    <ul>
+      <li>Please log in with this temporary password as soon as possible</li>
+      <li>We strongly recommend changing your password after logging in</li>
+      <li>This password was set by an administrator for security purposes</li>
+      <li>If you did not request this password reset, please contact support immediately</li>
+    </ul>
+    <p style="text-align: center;">
+      <a href="${loginUrl}" class="button">Login to Your Account</a>
+    </p>
+    <p>You can change your password from your account settings after logging in.</p>
+    <p><strong>For your security:</strong></p>
+    <ul>
+      <li>Never share your password with anyone</li>
+      <li>Use a strong, unique password</li>
+      <li>Change your password regularly</li>
+      <li>If you suspect unauthorized access, contact support immediately</li>
+    </ul>
+  `;
+
+  const html = getEmailTemplate('Password Reset by Administrator', content);
+  const text = `Password Reset by Administrator\n\nHi ${userName || 'there'},\n\nYour account password has been reset by an administrator${adminName ? ` (${adminName})` : ''}.\n\nYour new temporary password is: ${newPassword}\n\nPlease log in at ${loginUrl} and change your password immediately.\n\nIf you did not request this, please contact support immediately.`;
+
+  await sendEmail(userEmail, 'Password Reset by Administrator - Giaom Marketplace', html, text);
+};
+
 // Initialize on module load
 initializeEmailService();

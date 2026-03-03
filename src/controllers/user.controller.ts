@@ -4,6 +4,7 @@ import User from '../models/User';
 import SellerProfile from '../models/SellerProfile';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../utils/errors';
+import { sendAdminPasswordResetEmail } from '../utils/emailService';
 
 // Get current user profile
 export const getCurrentUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -370,6 +371,24 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
     // Update user password
     user.password = hashedPassword;
     await user.save();
+
+    // Send email notification to user (async, don't wait for it)
+    try {
+      const adminName = req.user?.fullName || 'Administrator';
+      await sendAdminPasswordResetEmail(
+        user.email,
+        user.fullName || 'Customer',
+        password, // Send the plain password before hashing (this is the temporary password set by admin)
+        adminName
+      );
+    } catch (error: any) {
+      // Log error but don't fail the request (email failure shouldn't break password reset)
+      console.error('Failed to send admin password reset email:', error.message);
+      // In development, log the password for testing
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Admin reset password for ${user.email}: ${password}`);
+      }
+    }
 
     res.json({
       message: 'Password has been reset successfully'
