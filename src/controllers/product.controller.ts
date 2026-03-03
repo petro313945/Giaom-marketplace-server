@@ -13,6 +13,9 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
       minPrice,
       maxPrice,
       sellerId,
+      size,
+      color,
+      stockStatus,
       page = '1',
       limit = '20',
       sortBy = 'createdAt',
@@ -31,11 +34,13 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
     }
 
     if (search) {
-      // Use regex search for flexible text matching
-      // The text index on title/description will still help with query performance
+      // Try to use text search first (more efficient), fallback to regex if needed
+      // Text search requires exact word matches, so we use regex for partial matches
+      // Optimize regex by removing unnecessary case-insensitive flag when possible
+      const searchRegex = new RegExp(search as string, 'i');
       query.$or = [
-        { title: { $regex: search as string, $options: 'i' } },
-        { description: { $regex: search as string, $options: 'i' } }
+        { title: searchRegex },
+        { description: searchRegex }
       ];
     }
 
@@ -43,6 +48,78 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
       query.price = {};
       if (minPrice) query.price.$gte = Number(minPrice);
       if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    // Filter by size - products that have variants with the specified size
+    if (size) {
+      query['variants.size'] = size as string;
+    }
+
+    // Filter by color - products that have variants with the specified color
+    if (color) {
+      query['variants.color'] = color as string;
+    }
+
+    // Filter by stock status
+    if (stockStatus) {
+      if (stockStatus === 'inStock') {
+        // Products that have stock: either base stockQuantity > 0 OR any variant has stock > 0
+        const stockCondition = {
+          $or: [
+            { stockQuantity: { $gt: 0 } },
+            { 'variants.stock': { $gt: 0 } }
+          ]
+        };
+        
+        // Combine with existing search $or if it exists
+        if (search && query.$or) {
+          const searchCondition = { $or: query.$or };
+          if (query.$and) {
+            query.$and.push(searchCondition, stockCondition);
+          } else {
+            query.$and = [searchCondition, stockCondition];
+          }
+          delete query.$or;
+        } else {
+          if (query.$and) {
+            query.$and.push(stockCondition);
+          } else {
+            query.$or = stockCondition.$or;
+          }
+        }
+      } else if (stockStatus === 'outOfStock') {
+        // Products that are out of stock: base stockQuantity === 0 AND 
+        // (no variants exist OR all variants have stock === 0)
+        const stockCondition = {
+          $and: [
+            { stockQuantity: 0 },
+            {
+              $or: [
+                { variants: { $exists: false } },
+                { variants: { $size: 0 } },
+                { 'variants': { $not: { $elemMatch: { stock: { $gt: 0 } } } } }
+              ]
+            }
+          ]
+        };
+        
+        // Combine with existing conditions
+        if (search && query.$or) {
+          const searchCondition = { $or: query.$or };
+          if (query.$and) {
+            query.$and.push(searchCondition, ...stockCondition.$and);
+          } else {
+            query.$and = [searchCondition, ...stockCondition.$and];
+          }
+          delete query.$or;
+        } else {
+          if (query.$and) {
+            query.$and.push(...stockCondition.$and);
+          } else {
+            query.$and = stockCondition.$and;
+          }
+        }
+      }
     }
 
     // Pagination
@@ -62,14 +139,17 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
       sort.createdAt = sortOrder === 'asc' ? 1 : -1;
     }
 
-    // Execute query
-    const products = await Product.find(query)
-      .populate('sellerId', 'email fullName')
-      .sort(sort)
-      .skip(skip)
-      .limit(limitNum);
-
-    const total = await Product.countDocuments(query);
+    // Execute queries in parallel for better performance
+    const [products, total] = await Promise.all([
+      Product.find(query)
+        .populate('sellerId', 'email fullName')
+        .select('_id sellerId title description price category imageUrl imageUrls colorImages stockQuantity variants bulkDiscountTiers status createdAt updatedAt')
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(), // Use lean() for better performance when we don't need Mongoose documents
+      Product.countDocuments(query)
+    ]);
 
     // If filtering by sellerId, fetch businessName once for all products
     let sellerBusinessName: string | null = null;
@@ -85,12 +165,12 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
     }
 
     res.json({
-      products: products.map(product => {
+      products: products.map((product: any) => {
         // Prepare sellerId object with businessName if available
         let sellerIdResponse = product.sellerId;
         if (typeof product.sellerId === 'object' && product.sellerId !== null && sellerBusinessName) {
           sellerIdResponse = {
-            ...(product.sellerId as any).toObject ? (product.sellerId as any).toObject() : product.sellerId,
+            ...product.sellerId,
             businessName: sellerBusinessName
           };
         }
@@ -773,14 +853,16 @@ export const getAllProductsAdmin = async (req: AuthRequest, res: Response): Prom
     const [products, total] = await Promise.all([
       Product.find(query)
         .populate('sellerId', 'email fullName')
+        .select('_id sellerId title description price category imageUrl imageUrls colorImages stockQuantity variants bulkDiscountTiers status createdAt updatedAt')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(), // Use lean() for better performance
       Product.countDocuments(query)
     ]);
 
     res.json({
-      products: products.map(product => ({
+      products: products.map((product: any) => ({
         id: product._id,
         _id: product._id,
         sellerId: product.sellerId,

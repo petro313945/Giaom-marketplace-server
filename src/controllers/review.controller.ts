@@ -413,6 +413,57 @@ export const getPendingReviews = async (req: AuthRequest, res: Response): Promis
   }
 };
 
+// Admin: Get all reviews (optionally filter by status)
+export const getAllReviewsAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+
+    const status = (req.query.status as string) || 'all';
+    const query: any = {};
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
+    const [reviews, total] = await Promise.all([
+      Review.find(query)
+        .populate('userId', 'email fullName')
+        .populate('productId', 'title')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Review.countDocuments(query)
+    ]);
+
+    res.json({
+      reviews: reviews.map(review => ({
+        id: review._id,
+        productId: review.productId,
+        userId: review.userId,
+        rating: review.rating,
+        comment: review.comment,
+        status: review.status,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get reviews' });
+  }
+};
+
 // Admin: Approve review
 export const approveReview = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -482,5 +533,74 @@ export const rejectReview = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
     res.status(500).json({ error: error.message || 'Failed to reject review' });
+  }
+};
+
+// Seller: Get all reviews for seller's products
+export const getSellerReviews = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    // Check if user is a seller
+    if (req.user.role !== 'seller' && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'Seller access required' });
+      return;
+    }
+
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+
+    // Get all product IDs for this seller
+    const sellerProducts = await Product.find({ sellerId: req.user._id }).select('_id');
+    const productIds = sellerProducts.map(p => p._id);
+
+    if (productIds.length === 0) {
+      res.json({
+        reviews: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          pages: 0
+        }
+      });
+      return;
+    }
+
+    // Get reviews for seller's products
+    const [reviews, total] = await Promise.all([
+      Review.find({ productId: { $in: productIds } })
+        .populate('userId', 'email fullName')
+        .populate('productId', 'title')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Review.countDocuments({ productId: { $in: productIds } })
+    ]);
+
+    res.json({
+      reviews: reviews.map(review => ({
+        id: review._id,
+        productId: review.productId,
+        userId: review.userId,
+        rating: review.rating,
+        comment: review.comment,
+        status: review.status,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get seller reviews' });
   }
 };

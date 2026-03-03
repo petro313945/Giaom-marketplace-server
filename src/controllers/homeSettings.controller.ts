@@ -12,15 +12,29 @@ export const getHomeSettings = async (req: AuthRequest, res: Response): Promise<
       settings = await HomeSettings.create({});
     }
 
-    // Populate featured categories
+    // Populate featured categories - preserve order as set by admin
+    const categoryIds = settings.featuredCategories.slice(0, 6); // Limit to 6
+    const categoriesMap = new Map();
+    
+    // Fetch categories without sorting to preserve order
     const categories = await Category.find({
-      _id: { $in: settings.featuredCategories },
+      _id: { $in: categoryIds },
       isActive: true
-    }).limit(6).sort({ name: 1 });
+    });
+
+    // Create a map for quick lookup
+    categories.forEach(category => {
+      categoriesMap.set(category._id.toString(), category);
+    });
+
+    // Reorder categories according to the order in settings.featuredCategories
+    const orderedCategories = categoryIds
+      .map(id => categoriesMap.get(id.toString()))
+      .filter(category => category !== undefined); // Filter out any that don't exist or are inactive
 
     // Get product count for each category
     const categoriesWithCount = await Promise.all(
-      categories.map(async (category) => {
+      orderedCategories.map(async (category) => {
         const count = await Product.countDocuments({
           category: category.slug,
           status: 'approved'

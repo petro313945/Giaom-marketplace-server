@@ -106,6 +106,15 @@ const ProductSchema: Schema = new Schema(
 ProductSchema.index({ sellerId: 1 });
 ProductSchema.index({ category: 1 });
 ProductSchema.index({ status: 1 });
+ProductSchema.index({ price: 1 }); // For price sorting and filtering
+ProductSchema.index({ createdAt: -1 }); // For default sorting
 ProductSchema.index({ title: 'text', description: 'text' }); // Text search
+
+// Compound indexes for common query patterns
+ProductSchema.index({ status: 1, category: 1 }); // Filter by status and category
+ProductSchema.index({ status: 1, sellerId: 1 }); // Filter by status and seller
+ProductSchema.index({ status: 1, price: 1 }); // Filter by status and sort by price
+ProductSchema.index({ status: 1, createdAt: -1 }); // Filter by status and sort by date
+ProductSchema.index({ status: 1, category: 1, price: 1 }); // Combined filter and sort
 
 export default mongoose.model<IProduct>('Product', ProductSchema);
