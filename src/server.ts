@@ -7,7 +7,7 @@ dotenv.config();
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
-import { connectDatabase } from './config/database';
+import { connectDatabase, isConnected, getConnectionState } from './config/database';
 import { errorHandler } from './middleware/error.middleware';
 import { apiLimiter, authLimiter, uploadLimiter } from './middleware/rateLimit.middleware';
 import { seedAdmin } from './utils/seedAdmin';
@@ -54,7 +54,7 @@ app.use(cors({
   origin: [
     CLIENT_URL,
     'http://localhost:3000',
-    'http://31.97.51.42:3000',
+    'http://146.19.170.131:3000',
     /^http:\/\/31\.97\.51\.42/ // Allow any port on this IP
   ],
   credentials: true,
@@ -83,9 +83,14 @@ app.get('/', (req: Request, res: Response) => {
 
 // Health check route
 app.get('/api/health', (req: Request, res: Response) => {
+  const dbStatus = isConnected() ? 'connected' : getConnectionState();
   res.json({
     status: 'ok',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    database: {
+      status: dbStatus,
+      connected: isConnected()
+    }
   });
 });
 
@@ -124,7 +129,7 @@ const startServer = async () => {
     // Start server - listen on all interfaces (0.0.0.0) to allow network access
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server is running on http://localhost:${PORT}`);
-      console.log(`🚀 Server is also accessible on http://31.97.51.42:${PORT}`);
+      console.log(`🚀 Server is also accessible on http://146.19.170.131:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
