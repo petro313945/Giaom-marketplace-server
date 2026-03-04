@@ -21,7 +21,7 @@ const lookup = promisify(dns.lookup);
 const resolve4 = promisify(dns.resolve4);
 
 const MONGODB_URI = process.env.MONGODB_URI;
-
+console.log(MONGODB_URI);
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is not set!');
   console.error('💡 Please set it in your .env file');
@@ -132,6 +132,7 @@ async function runDiagnostics() {
     
     console.log('   Attempting connection...');
     const conn = await mongoose.connect(MONGODB_URI!, options);
+    console.log(conn);
     console.log(`   ✅ SUCCESS: Connected to MongoDB!`);
     console.log(`      Host: ${conn.connection.host}`);
     console.log(`      Database: ${conn.connection.name}`);
@@ -139,6 +140,7 @@ async function runDiagnostics() {
     await mongoose.connection.close();
     console.log('\n✅ All diagnostics passed! Connection is working.');
   } catch (connError: any) {
+    console.log("asdf", connError.message)
     console.error(`   ❌ FAILED: ${connError.message}`);
     console.error(`   Error Code: ${connError.code}`);
     console.error(`   Error Name: ${connError.name}`);
